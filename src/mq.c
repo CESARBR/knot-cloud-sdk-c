@@ -55,6 +55,18 @@ struct mq_context {
 
 static struct mq_context mq_ctx;
 
+static void on_disconnect(struct l_io *io, void *user_data)
+{
+	l_debug("AMQP broker disconnected");
+
+	if (mq_ctx.disconnected_cb)
+		mq_ctx.disconnected_cb(mq_ctx.connection_data);
+
+	if (mq_ctx.conn_retry_timeout)
+		l_timeout_modify_ms(mq_ctx.conn_retry_timeout,
+				    MQ_CONNECTION_RETRY_TIMEOUT_MS);
+}
+
 static const char *mq_server_exception_string(amqp_rpc_reply_t reply)
 {
 	amqp_connection_close_t *m = reply.reply.decoded;
@@ -98,69 +110,6 @@ static const char *mq_rpc_reply_string(amqp_rpc_reply_t reply)
 	}
 }
 
-static char *mq_bytes_to_new_string(amqp_bytes_t data)
-{
-	char *str = l_new(char, data.len + 1);
-
-	memcpy(str, data.bytes, data.len);
-	str[data.len] = '\0';
-	return str;
-}
-
-/**
- * Callback function to consume message envelope from AMQP queue.
- *
- * Returns true on success or false if the read callback is not set.
- */
-static bool on_receive(struct l_io *io, void *user_data)
-{
-	amqp_rpc_reply_t res;
-	amqp_envelope_t envelope;
-	char *exchange, *routing_key, *body;
-	struct timeval time_out = { .tv_usec = MQ_CONNECTION_TIMEOUT_US };
-	bool success;
-
-	if (amqp_release_buffers_ok(mq_ctx.conn))
-		amqp_release_buffers(mq_ctx.conn);
-
-	res = amqp_consume_message(mq_ctx.conn, &envelope, &time_out, 0);
-
-	if (res.reply_type != AMQP_RESPONSE_NORMAL)
-		return true;
-
-	l_debug("Receive %u -> exchange: %.*s, routingkey: %.*s\nBody: %.*s\n",
-		(unsigned int)envelope.delivery_tag,
-		(int)envelope.exchange.len,
-		(char *)envelope.exchange.bytes,
-		(int)envelope.routing_key.len,
-		(char *)envelope.routing_key.bytes,
-		(int)envelope.message.body.len,
-		(char *)envelope.message.body.bytes);
-
-	if (!mq_ctx.read_cb) {
-		l_debug("AMQP read callback is not set");
-		amqp_destroy_envelope(&envelope);
-		return false;
-	}
-
-	exchange = mq_bytes_to_new_string(envelope.exchange);
-	routing_key = mq_bytes_to_new_string(envelope.routing_key);
-	body = mq_bytes_to_new_string(envelope.message.body);
-
-	success = mq_ctx.read_cb(exchange, routing_key, body, user_data);
-	if (!success)
-		/* TODO: Add the msg on the queue again */
-		l_debug("Message envelope not consumed");
-
-	l_debug("Destroy received envelope");
-	amqp_destroy_envelope(&envelope);
-	l_free(exchange);
-	l_free(routing_key);
-	l_free(body);
-
-	return true;
-}
-
 static void close_connection(void)
 {
 	amqp_rpc_reply_t r;
@@ -185,18 +134,6 @@ static void close_connection(void)
 				amqp_error_string2(err));
 
 	mq_ctx.conn = NULL;
-}
-
-static void on_disconnect(struct l_io *io, void *user_data)
-{
-	l_debug("AMQP broker disconnected");
-
-	if (mq_ctx.disconnected_cb)
-		mq_ctx.disconnected_cb(mq_ctx.connection_data);
-
-	if (mq_ctx.conn_retry_timeout)
-		l_timeout_modify_ms(mq_ctx.conn_retry_timeout,
-				    MQ_CONNECTION_RETRY_TIMEOUT_MS);
 }
 
 static void attempt_connection(struct l_timeout *ltimeout, void *user_data)
@@ -302,6 +239,69 @@ destroy_conn:
 	l_timeout_modify_ms(ltimeout, MQ_CONNECTION_RETRY_TIMEOUT_MS);
 done:
 	l_free(tmp_url);
+}
+
+static char *mq_bytes_to_new_string(amqp_bytes_t data)
+{
+	char *str = l_new(char, data.len + 1);
+
+	memcpy(str, data.bytes, data.len);
+	str[data.len] = '\0';
+	return str;
+}
+
+/**
+ * Callback function to consume message envelope from AMQP queue.
+ *
+ * Returns true on success or false if the read callback is not set.
+ */
+static bool on_receive(struct l_io *io, void *user_data)
+{
+	amqp_rpc_reply_t res;
+	amqp_envelope_t envelope;
+	char *exchange, *routing_key, *body;
+	struct timeval time_out = { .tv_usec = MQ_CONNECTION_TIMEOUT_US };
+	bool success;
+
+	if (amqp_release_buffers_ok(mq_ctx.conn))
+		amqp_release_buffers(mq_ctx.conn);
+
+	res = amqp_consume_message(mq_ctx.conn, &envelope, &time_out, 0);
+
+	if (res.reply_type != AMQP_RESPONSE_NORMAL)
+		return true;
+
+	l_debug("Receive %u -> exchange: %.*s, routingkey: %.*s\nBody: %.*s\n",
+		(unsigned int)envelope.delivery_tag,
+		(int)envelope.exchange.len,
+		(char *)envelope.exchange.bytes,
+		(int)envelope.routing_key.len,
+		(char *)envelope.routing_key.bytes,
+		(int)envelope.message.body.len,
+		(char *)envelope.message.body.bytes);
+
+	if (!mq_ctx.read_cb) {
+		l_debug("AMQP read callback is not set");
+		amqp_destroy_envelope(&envelope);
+		return false;
+	}
+
+	exchange = mq_bytes_to_new_string(envelope.exchange);
+	routing_key = mq_bytes_to_new_string(envelope.routing_key);
+	body = mq_bytes_to_new_string(envelope.message.body);
+
+	success = mq_ctx.read_cb(exchange, routing_key, body, user_data);
+	if (!success)
+		/* TODO: Add the msg on the queue again */
+		l_debug("Message envelope not consumed");
+
+	l_debug("Destroy received envelope");
+	amqp_destroy_envelope(&envelope);
+	l_free(exchange);
+	l_free(routing_key);
+	l_free(body);
+
+	return true;
 }
 
 static int mq_prepare_queue(amqp_bytes_t queue, const char *exchange,
@@ -516,6 +516,23 @@ int8_t mq_publish_fanout_message(const char *exchange,
 }
 
 /**
+ * mq_prepare_direct_queue:
+ * @queue: queue declared
+ * @exchange: exchange to be declared
+ * @routing_key: routing key to bind
+ *
+ * Declares a exchange and bind a routing key to a queue to be a consumer.
+ *
+ * Returns: 0 if successful and -1 otherwise.
+ */
+int mq_prepare_direct_queue(amqp_bytes_t queue, const char *exchange,
+			    const char *routing_key)
+{
+	return mq_prepare_queue(queue, exchange, AMQP_EXCHANGE_TYPE_DIRECT,
+				routing_key);
+}
+
+/**
  * mq_declare_new_queue:
  * @name: queue name
  *
@@ -576,23 +593,6 @@ int mq_delete_queue(amqp_bytes_t queue)
 	}
 
 	return 0;
-}
-
-/**
- * mq_prepare_queue:
- * @queue: queue declared
- * @exchange: exchange to be declared
- * @routing_key: routing key to bind
- *
- * Declares a exchange and bind a routing key to a queue to be a consumer.
- *
- * Returns: 0 if successful and -1 otherwise.
- */
-int mq_prepare_direct_queue(amqp_bytes_t queue, const char *exchange,
-			    const char *routing_key)
-{
-	return mq_prepare_queue(queue, exchange, AMQP_EXCHANGE_TYPE_DIRECT,
-				routing_key);
 }
 
 /**

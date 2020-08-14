@@ -93,6 +93,16 @@ static void knot_cloud_device_free(void *data)
 	l_free(device);
 }
 
+static void knot_cloud_msg_destroy(struct knot_cloud_msg *msg)
+{
+	if (msg->type == UPDATE_MSG || msg->type == REQUEST_MSG)
+		l_queue_destroy(msg->list, l_free);
+	else if (msg->type == LIST_MSG)
+		l_queue_destroy(msg->list, knot_cloud_device_free);
+
+	l_free(msg);
+}
+
 static void *knot_cloud_device_array_foreach(json_object *array_item)
 {
 	json_object *jobjkey;
@@ -126,16 +136,6 @@ static void *knot_cloud_device_array_foreach(json_object *array_item)
 	device->schema = schema;
 
 	return device;
-}
-
-static void knot_cloud_msg_destroy(struct knot_cloud_msg *msg)
-{
-	if (msg->type == UPDATE_MSG || msg->type == REQUEST_MSG)
-		l_queue_destroy(msg->list, l_free);
-	else if (msg->type == LIST_MSG)
-		l_queue_destroy(msg->list, knot_cloud_device_free);
-
-	l_free(msg);
 }
 
 static int map_routing_key_to_msg_type(const char *routing_key)
@@ -322,17 +322,6 @@ static int create_cloud_queue(const char *id)
 	return 0;
 }
 
-static void destroy_cloud_queue(void)
-{
-	if (queue_fog.bytes) {
-		if (mq_delete_queue(queue_fog))
-			l_error("Error when delete Fog Queue");
-
-		amqp_bytes_free(queue_fog);
-		queue_fog = amqp_empty_bytes;
-	}
-}
-
 static void destroy_knot_cloud_events(void)
 {
 	int msg_type;
@@ -383,6 +372,17 @@ static int set_knot_cloud_events(const char *id)
 				l_strdup(binding_key_list_reply);
 
 	return 0;
+}
+
+static void destroy_cloud_queue(void)
+{
+	if (queue_fog.bytes) {
+		if (mq_delete_queue(queue_fog))
+			l_error("Error when delete Fog Queue");
+
+		amqp_bytes_free(queue_fog);
+		queue_fog = amqp_empty_bytes;
+	}
 }
 
 /**

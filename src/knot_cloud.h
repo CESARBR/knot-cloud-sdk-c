@@ -52,6 +52,14 @@ typedef bool (*knot_cloud_cb_t) (const struct knot_cloud_msg *msg,
 typedef void (*knot_cloud_connected_cb_t) (void *user_data);
 typedef void (*knot_cloud_disconnected_cb_t) (void *user_data);
 
+int knot_cloud_register_device(const char *id, const char *name);
+int knot_cloud_unregister_device(const char *id);
+int knot_cloud_auth_device(const char *id, const char *token);
+int knot_cloud_update_schema(const char *id, struct l_queue *schema_list);
+int knot_cloud_list_devices(void);
+int knot_cloud_publish_data(const char *id, uint8_t sensor_id,
+			    uint8_t value_type, const knot_value_type *value,
+			    uint8_t kval_len);
 int knot_cloud_read_start(const char *id, knot_cloud_cb_t read_handler_cb,
 			  void *user_data);
 int knot_cloud_start(char *url, char *user_token,
@@ -59,11 +67,4 @@ int knot_cloud_start(char *url, char *user_token,
 		     knot_cloud_disconnected_cb_t disconnected_cb,
 		     void *user_data);
 void knot_cloud_stop(void);
-int knot_cloud_list_devices(void);
-int knot_cloud_publish_data(const char *id, uint8_t sensor_id,
-			    uint8_t value_type, const knot_value_type *value,
-			    uint8_t kval_len);
-int knot_cloud_register_device(const char *id, const char *name);
-int knot_cloud_unregister_device(const char *id);
-int knot_cloud_auth_device(const char *id, const char *token);
-int knot_cloud_update_schema(const char *id, struct l_queue *schema_list);
+

@@ -33,6 +33,69 @@
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
 /*
+ * TODO: consider moving this to knot-protocol
+ */
+static uint64_t knot_value_as_uint64(const knot_value_type *data)
+{
+	return data->val_u64;
+}
+
+/*
+ * TODO: consider moving this to knot-protocol
+ */
+static uint32_t knot_value_as_uint(const knot_value_type *data)
+{
+	return data->val_u;
+}
+
+/*
+ * TODO: consider moving this to knot-protocol
+ */
+static int64_t knot_value_as_int64(const knot_value_type *data)
+{
+	return data->val_i64;
+}
+
+static char *knot_value_as_raw(const knot_value_type *data,
+			       uint8_t kval_len, size_t *encoded_len)
+{
+	char *encoded;
+	size_t olen;
+
+	encoded = l_base64_encode(data->raw, kval_len, 0, &olen);
+	if (!encoded)
+		return NULL;
+
+	*encoded_len = olen;
+
+	return encoded;
+}
+
+/*
+ * TODO: consider moving this to knot-protocol
+ */
+static bool knot_value_as_boolean(const knot_value_type *data)
+{
+	return data->val_b;
+}
+
+/*
+ * TODO: consider moving this to knot-protocol
+ */
+static double knot_value_as_double(const knot_value_type *data)
+{
+	return (double) data->val_f;
+}
+
+/*
+ * TODO: consider moving this to knot-protocol
+ */
+static int knot_value_as_int(const knot_value_type *data)
+{
+	return data->val_i;
+}
+
+/*
  * Parsing knot_value_type attribute
  */
 static int parse_json2data(json_object *jobj, knot_value_type *kvalue)
@@ -78,6 +141,234 @@ static int parse_json2data(json_object *jobj, knot_value_type *kvalue)
 	}
 
 	return olen;
+}
+
+static json_object *schema_item_create_obj(knot_msg_schema *schema)
+{
+	json_object *json_schema;
+
+	json_schema = json_object_new_object();
+
+	json_object_object_add(json_schema, "sensorId",
+				       json_object_new_int(schema->sensor_id));
+	json_object_object_add(json_schema, "valueType",
+				json_object_new_int(
+					schema->values.value_type));
+	json_object_object_add(json_schema, "unit",
+				json_object_new_int(
+					schema->values.unit));
+	json_object_object_add(json_schema, "typeId",
+				json_object_new_int(
+					schema->values.type_id));
+	json_object_object_add(json_schema, "name",
+				json_object_new_string(
+					schema->values.name));
+
+	/*
+	 * Returned JSON object is in the following format:
+	 *
+	 * {
+	 *   "sensorId": 1,
+	 *   "valueType": 0xFFF1,
+	 *   "unit": 0,
+	 *   "typeId": 3,
+	 *   "name": "Door lock"
+	 * }
+	 */
+
+	return json_schema;
+}
+
+static void schema_item_create_and_append(void *data, void *user_data)
+{
+	knot_msg_schema *schema = data;
+	json_object *schema_list = user_data;
+	json_object *item;
+
+	item = schema_item_create_obj(schema);
+	json_object_array_add(schema_list, item);
+}
+
+json_object *parser_schema_create_object(const char *device_id,
+					 struct l_queue *schema_list)
+{
+	json_object *json_msg;
+	json_object *json_schema_array;
+
+	json_msg = json_object_new_object();
+	json_schema_array = json_object_new_array();
+
+	json_object_object_add(json_msg, "id",
+			       json_object_new_string(device_id));
+
+	l_queue_foreach(schema_list, schema_item_create_and_append,
+			json_schema_array);
+
+	json_object_object_add(json_msg, "schema", json_schema_array);
+
+	/*
+	 * Returned JSON object is in the following format:
+	 *
+	 * { "id": "fbe64efa6c7f717e",
+	 *   "schema" : [{
+	 *         "sensorId": 1,
+	 *         "valueType": 0xFFF1,
+	 *         "unit": 0,
+	 *         "typeId": 3,
+	 *         "name": "Door lock"
+	 *   }]
+	 * }
+	 */
+
+	return json_msg;
+}
+
+struct l_queue *parser_update_to_list(json_object *jso)
+{
+	json_object *json_array;
+	json_object *json_data;
+	json_object *jobjkey;
+	knot_msg_data *msg;
+	struct l_queue *list;
+	uint64_t i;
+	int jtype;
+	int olen;
+	uint8_t sensor_id;
+
+	list = l_queue_new();
+
+	if (!json_object_object_get_ex(jso, "data", &json_array))
+		goto fail;
+
+	for (i = 0; i < json_object_array_length(json_array); i++) {
+
+		json_data = json_object_array_get_idx(json_array, i);
+		if (!json_data)
+			goto fail;
+
+		/* Getting 'sensorId' */
+		if (!json_object_object_get_ex(json_data,
+							"sensorId", &jobjkey))
+			goto fail;
+
+		if (json_object_get_type(jobjkey) != json_type_int)
+			goto fail;
+
+		sensor_id = json_object_get_int(jobjkey);
+
+		/* Getting 'value' */
+		if (!json_object_object_get_ex(json_data, "value", &jobjkey))
+			goto fail;
+
+		jtype = json_object_get_type(jobjkey);
+		if (jtype != json_type_int &&
+		jtype != json_type_double && jtype != json_type_boolean &&
+			jtype != json_type_string)
+			goto fail;
+
+		msg = l_new(knot_msg_data, 1);
+
+		olen = parse_json2data(jobjkey, &msg->payload);
+		if (olen <= 0) {
+			l_free(msg);
+			goto fail;
+		}
+
+		msg->sensor_id = sensor_id;
+		msg->hdr.type = KNOT_MSG_PUSH_DATA_REQ;
+		msg->hdr.payload_len = olen + sizeof(msg->sensor_id);
+
+		if (!l_queue_push_tail(list, msg)) {
+			l_free(msg);
+			goto fail;
+		}
+	}
+
+	return list;
+
+fail:
+	l_queue_destroy(list, l_free);
+	return NULL;
+}
+
+json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
+				       uint8_t value_type,
+				       const knot_value_type *value,
+				       uint8_t kval_len)
+{
+	json_object *json_msg;
+	json_object *data;
+	json_object *json_array;
+	char *encoded;
+	size_t encoded_len;
+
+	json_msg = json_object_new_object();
+	json_array = json_object_new_array();
+
+	json_object_object_add(json_msg, "id",
+			       json_object_new_string(device_id));
+	data = json_object_new_object();
+	json_object_object_add(data, "sensorId",
+			       json_object_new_int(sensor_id));
+
+	switch (value_type) {
+	case KNOT_VALUE_TYPE_INT:
+		json_object_object_add(data, "value",
+				json_object_new_int(knot_value_as_int(value)));
+		break;
+	case KNOT_VALUE_TYPE_FLOAT:
+		json_object_object_add(data, "value",
+			json_object_new_double(knot_value_as_double(value)));
+		break;
+	case KNOT_VALUE_TYPE_BOOL:
+		json_object_object_add(data, "value",
+			json_object_new_boolean(knot_value_as_boolean(value)));
+		break;
+	case KNOT_VALUE_TYPE_RAW:
+		/* Encode as base64 */
+		encoded = knot_value_as_raw(value, kval_len, &encoded_len);
+		if (!encoded)
+			goto fail;
+
+		json_object_object_add(data, "value",
+			json_object_new_string_len(encoded, encoded_len));
+		break;
+	case KNOT_VALUE_TYPE_INT64:
+		json_object_object_add(data, "value",
+			json_object_new_int64(knot_value_as_int64(value)));
+		break;
+	case KNOT_VALUE_TYPE_UINT:
+		json_object_object_add(data, "value",
+			json_object_new_uint64(knot_value_as_uint(value)));
+		break;
+	case KNOT_VALUE_TYPE_UINT64:
+		json_object_object_add(data, "value",
+			json_object_new_uint64(knot_value_as_uint64(value)));
+		break;
+	default:
+		goto fail;
+	}
+
+	json_object_array_add(json_array, data);
+	json_object_object_add(json_msg, "data", json_array);
+
+	/*
+	 * Returned JSON object is in the following format:
+	 *
+	 * { "id": "fbe64efa6c7f717e",
+	 *   "data": [{
+	 *     "sensorId": 1,
+	 *     "value": false,
+	 *   }]
+	 * }
+	 */
+
+	return json_msg;
+fail:
+	json_object_put(data);
+	json_object_put(json_array);
+	json_object_put(json_msg);
+	return NULL;
 }
 
 struct l_queue *parser_schema_to_list(const char *json_str)
@@ -270,217 +561,6 @@ json_object *parser_sensorid_to_json(const char *key, struct l_queue *list)
 	return setdatajobj;
 }
 
-struct l_queue *parser_update_to_list(json_object *jso)
-{
-	json_object *json_array;
-	json_object *json_data;
-	json_object *jobjkey;
-	knot_msg_data *msg;
-	struct l_queue *list;
-	uint64_t i;
-	int jtype;
-	int olen;
-	uint8_t sensor_id;
-
-	list = l_queue_new();
-
-	if (!json_object_object_get_ex(jso, "data", &json_array))
-		goto fail;
-
-	for (i = 0; i < json_object_array_length(json_array); i++) {
-
-		json_data = json_object_array_get_idx(json_array, i);
-		if (!json_data)
-			goto fail;
-
-		/* Getting 'sensorId' */
-		if (!json_object_object_get_ex(json_data,
-							"sensorId", &jobjkey))
-			goto fail;
-
-		if (json_object_get_type(jobjkey) != json_type_int)
-			goto fail;
-
-		sensor_id = json_object_get_int(jobjkey);
-
-		/* Getting 'value' */
-		if (!json_object_object_get_ex(json_data, "value", &jobjkey))
-			goto fail;
-
-		jtype = json_object_get_type(jobjkey);
-		if (jtype != json_type_int &&
-		jtype != json_type_double && jtype != json_type_boolean &&
-			jtype != json_type_string)
-			goto fail;
-
-		msg = l_new(knot_msg_data, 1);
-
-		olen = parse_json2data(jobjkey, &msg->payload);
-		if (olen <= 0) {
-			l_free(msg);
-			goto fail;
-		}
-
-		msg->sensor_id = sensor_id;
-		msg->hdr.type = KNOT_MSG_PUSH_DATA_REQ;
-		msg->hdr.payload_len = olen + sizeof(msg->sensor_id);
-
-		if (!l_queue_push_tail(list, msg)) {
-			l_free(msg);
-			goto fail;
-		}
-	}
-
-	return list;
-
-fail:
-	l_queue_destroy(list, l_free);
-	return NULL;
-}
-
-/*
- * TODO: consider moving this to knot-protocol
- */
-static int knot_value_as_int(const knot_value_type *data)
-{
-	return data->val_i;
-}
-
-/*
- * TODO: consider moving this to knot-protocol
- */
-static double knot_value_as_double(const knot_value_type *data)
-{
-	return (double) data->val_f;
-}
-
-/*
- * TODO: consider moving this to knot-protocol
- */
-static bool knot_value_as_boolean(const knot_value_type *data)
-{
-	return data->val_b;
-}
-
-static char *knot_value_as_raw(const knot_value_type *data,
-			       uint8_t kval_len, size_t *encoded_len)
-{
-	char *encoded;
-	size_t olen;
-
-	encoded = l_base64_encode(data->raw, kval_len, 0, &olen);
-	if (!encoded)
-		return NULL;
-
-	*encoded_len = olen;
-
-	return encoded;
-}
-
-/*
- * TODO: consider moving this to knot-protocol
- */
-static int64_t knot_value_as_int64(const knot_value_type *data)
-{
-	return data->val_i64;
-}
-
-/*
- * TODO: consider moving this to knot-protocol
- */
-static uint32_t knot_value_as_uint(const knot_value_type *data)
-{
-	return data->val_u;
-}
-
-/*
- * TODO: consider moving this to knot-protocol
- */
-static uint64_t knot_value_as_uint64(const knot_value_type *data)
-{
-	return data->val_u64;
-}
-
-json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
-				       uint8_t value_type,
-				       const knot_value_type *value,
-				       uint8_t kval_len)
-{
-	json_object *json_msg;
-	json_object *data;
-	json_object *json_array;
-	char *encoded;
-	size_t encoded_len;
-
-	json_msg = json_object_new_object();
-	json_array = json_object_new_array();
-
-	json_object_object_add(json_msg, "id",
-			       json_object_new_string(device_id));
-	data = json_object_new_object();
-	json_object_object_add(data, "sensorId",
-			       json_object_new_int(sensor_id));
-
-	switch (value_type) {
-	case KNOT_VALUE_TYPE_INT:
-		json_object_object_add(data, "value",
-				json_object_new_int(knot_value_as_int(value)));
-		break;
-	case KNOT_VALUE_TYPE_FLOAT:
-		json_object_object_add(data, "value",
-			json_object_new_double(knot_value_as_double(value)));
-		break;
-	case KNOT_VALUE_TYPE_BOOL:
-		json_object_object_add(data, "value",
-			json_object_new_boolean(knot_value_as_boolean(value)));
-		break;
-	case KNOT_VALUE_TYPE_RAW:
-		/* Encode as base64 */
-		encoded = knot_value_as_raw(value, kval_len, &encoded_len);
-		if (!encoded)
-			goto fail;
-
-		json_object_object_add(data, "value",
-			json_object_new_string_len(encoded, encoded_len));
-		break;
-	case KNOT_VALUE_TYPE_INT64:
-		json_object_object_add(data, "value",
-			json_object_new_int64(knot_value_as_int64(value)));
-		break;
-	case KNOT_VALUE_TYPE_UINT:
-		json_object_object_add(data, "value",
-			json_object_new_uint64(knot_value_as_uint(value)));
-		break;
-	case KNOT_VALUE_TYPE_UINT64:
-		json_object_object_add(data, "value",
-			json_object_new_uint64(knot_value_as_uint64(value)));
-		break;
-	default:
-		goto fail;
-	}
-
-	json_object_array_add(json_array, data);
-	json_object_object_add(json_msg, "data", json_array);
-
-	/*
-	 * Returned JSON object is in the following format:
-	 *
-	 * { "id": "fbe64efa6c7f717e",
-	 *   "data": [{
-	 *     "sensorId": 1,
-	 *     "value": false,
-	 *   }]
-	 * }
-	 */
-
-	return json_msg;
-fail:
-	json_object_put(data);
-	json_object_put(json_array);
-	json_object_put(json_msg);
-	return NULL;
-}
-
 json_object *parser_device_json_create(const char *device_id,
 				       const char *device_name)
 {
@@ -546,86 +626,6 @@ json_object *parser_unregister_json_create(const char *device_id)
 	 * { "id": "fbe64efa6c7f717e" }
 	 */
 	return unreg;
-}
-
-static json_object *schema_item_create_obj(knot_msg_schema *schema)
-{
-	json_object *json_schema;
-
-	json_schema = json_object_new_object();
-
-	json_object_object_add(json_schema, "sensorId",
-				       json_object_new_int(schema->sensor_id));
-	json_object_object_add(json_schema, "valueType",
-				json_object_new_int(
-					schema->values.value_type));
-	json_object_object_add(json_schema, "unit",
-				json_object_new_int(
-					schema->values.unit));
-	json_object_object_add(json_schema, "typeId",
-				json_object_new_int(
-					schema->values.type_id));
-	json_object_object_add(json_schema, "name",
-				json_object_new_string(
-					schema->values.name));
-
-	/*
-	 * Returned JSON object is in the following format:
-	 *
-	 * {
-	 *   "sensorId": 1,
-	 *   "valueType": 0xFFF1,
-	 *   "unit": 0,
-	 *   "typeId": 3,
-	 *   "name": "Door lock"
-	 * }
-	 */
-
-	return json_schema;
-}
-
-static void schema_item_create_and_append(void *data, void *user_data)
-{
-	knot_msg_schema *schema = data;
-	json_object *schema_list = user_data;
-	json_object *item;
-
-	item = schema_item_create_obj(schema);
-	json_object_array_add(schema_list, item);
-}
-
-json_object *parser_schema_create_object(const char *device_id,
-					 struct l_queue *schema_list)
-{
-	json_object *json_msg;
-	json_object *json_schema_array;
-
-	json_msg = json_object_new_object();
-	json_schema_array = json_object_new_array();
-
-	json_object_object_add(json_msg, "id",
-			       json_object_new_string(device_id));
-
-	l_queue_foreach(schema_list, schema_item_create_and_append,
-			json_schema_array);
-
-	json_object_object_add(json_msg, "schema", json_schema_array);
-
-	/*
-	 * Returned JSON object is in the following format:
-	 *
-	 * { "id": "fbe64efa6c7f717e",
-	 *   "schema" : [{
-	 *         "sensorId": 1,
-	 *         "valueType": 0xFFF1,
-	 *         "unit": 0,
-	 *         "typeId": 3,
-	 *         "name": "Door lock"
-	 *   }]
-	 * }
-	 */
-
-	return json_msg;
 }
 
 const char *parser_get_key_str_from_json_obj(json_object *jso, const char *key)
