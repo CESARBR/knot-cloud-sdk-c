@@ -40,40 +40,7 @@
 #include "parser.h"
 #include "knot_cloud.h"
 
-#define MQ_QUEUE_FOG_OUT "thingd-fogOut"
-
-/* Exchanges */
-#define MQ_EXCHANGE_DEVICE "device"
-#define MQ_EXCHANGE_DATA_SENT "data.sent"
-
-/* Headers */
-#define MQ_AUTHORIZATION_HEADER "Authorization"
-
-#define MQ_MSG_EXPIRATION_TIME_MS 2000
-
- /* Southbound traffic (commands) */
-#define MQ_EVENT_PREFIX_DEVICE "device"
-#define MQ_EVENT_POSTFIX_DATA_UPDATE "data.update"
-#define MQ_EVENT_POSTFIX_DATA_REQUEST "data.request"
-
-#define MQ_EVENT_DEVICE_REGISTERED "device.registered"
-#define MQ_EVENT_DEVICE_UNREGISTERED "device.unregistered"
-#define MQ_EVENT_DEVICE_SCHEMA_UPDATED "device.schema.updated"
-
-#define MQ_EVENT_AUTH_REPLY "thingd-auth-reply"
-#define MQ_EVENT_LIST_REPLY "thingd-list-reply"
-
- /* Northbound traffic (control, measurements) */
-#define MQ_CMD_DEVICE_REGISTER "device.register"
-#define MQ_CMD_DEVICE_UNREGISTER "device.unregister"
-#define MQ_CMD_DEVICE_AUTH "device.auth"
-#define MQ_CMD_SCHEMA_SENT "device.schema.sent"
-#define MQ_CMD_DEVICE_LIST "device.list"
-
-#define MQ_DEFAULT_CORRELATION_ID "default-corrId"
-
 knot_cloud_cb_t knot_cloud_cb;
-amqp_bytes_t queue_reply;
 amqp_bytes_t queue_fog;
 char *user_auth_token;
 char *knot_cloud_events[MSG_TYPES_LENGTH];
