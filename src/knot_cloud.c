@@ -44,7 +44,6 @@ knot_cloud_cb_t knot_cloud_cb;
 amqp_bytes_t queue_fog;
 char *user_auth_token;
 char *knot_cloud_events[MSG_TYPES_LENGTH];
-amqp_table_entry_t headers[1];
 
 static void knot_cloud_device_free(void *data)
 {
@@ -375,8 +374,6 @@ int knot_cloud_register_device(const char *id, const char *name)
 
 	json_str = json_object_to_json_string(jobj_device);
 
-	headers[0].value.value.bytes = amqp_cstring_bytes(user_auth_token);
-
 	/**
 	 * Exchange
 	 *	Type: Direct
@@ -388,11 +385,13 @@ int knot_cloud_register_device(const char *id, const char *name)
 	 * Expiration
 	 *	2000 ms
 	 */
-	result = mq_publish_direct_message(MQ_EXCHANGE_DEVICE,
-					   MQ_CMD_DEVICE_REGISTER,
-					   headers, 1,
-					   MQ_MSG_EXPIRATION_TIME_MS,
-					   json_str);
+	mq_message_data_t mq_message = {
+		MQ_MESSAGE_TYPE_DIRECT, MQ_EXCHANGE_DEVICE,
+		MQ_CMD_DEVICE_REGISTER, MQ_MSG_EXPIRATION_TIME_MS, json_str,
+		NULL, NULL
+	};
+
+	result = mq_publish_message(&mq_message);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
@@ -423,8 +422,6 @@ int knot_cloud_unregister_device(const char *id)
 
 	json_str = json_object_to_json_string(jobj_unreg);
 
-	headers[0].value.value.bytes = amqp_cstring_bytes(user_auth_token);
-
 	/**
 	 * Exchange
 	 *	Type: Direct
@@ -436,11 +433,13 @@ int knot_cloud_unregister_device(const char *id)
 	 * Expiration
 	 *	2000 ms
 	 */
-	result = mq_publish_direct_message(MQ_EXCHANGE_DEVICE,
-					   MQ_CMD_DEVICE_UNREGISTER,
-					   headers, 1,
-					   MQ_MSG_EXPIRATION_TIME_MS,
-					   json_str);
+	mq_message_data_t mq_message = {
+		MQ_MESSAGE_TYPE_DIRECT, MQ_EXCHANGE_DEVICE,
+		MQ_CMD_DEVICE_UNREGISTER, MQ_MSG_EXPIRATION_TIME_MS, json_str,
+		NULL, NULL
+	};
+
+	result = mq_publish_message(&mq_message);
 	if (result < 0)
 		return KNOT_ERR_CLOUD_FAILURE;
 
@@ -472,8 +471,6 @@ int knot_cloud_auth_device(const char *id, const char *token)
 
 	json_str = json_object_to_json_string(jobj_auth);
 
-	headers[0].value.value.bytes = amqp_cstring_bytes(user_auth_token);
-
 	/**
 	 * Exchange
 	 *	Type: Direct
@@ -485,14 +482,12 @@ int knot_cloud_auth_device(const char *id, const char *token)
 	 * Expiration
 	 *	2000 ms
 	 */
-	result = mq_publish_direct_message_rpc(MQ_EXCHANGE_DEVICE,
-					       MQ_CMD_DEVICE_AUTH,
-					       headers, 1,
-					       MQ_MSG_EXPIRATION_TIME_MS,
-					       amqp_cstring_bytes(
-					       knot_cloud_events[AUTH_MSG]),
-					       MQ_DEFAULT_CORRELATION_ID,
-					       json_str);
+	mq_message_data_t mq_message = {
+		MQ_MESSAGE_TYPE_DIRECT_RPC, MQ_EXCHANGE_DEVICE,
+		MQ_CMD_DEVICE_AUTH, MQ_MSG_EXPIRATION_TIME_MS, json_str,
+		knot_cloud_events[AUTH_MSG], MQ_DEFAULT_CORRELATION_ID
+	 };
+	result = mq_publish_message(&mq_message);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
@@ -522,8 +517,6 @@ int knot_cloud_update_schema(const char *id, struct l_queue *schema_list)
 
 	json_str = json_object_to_json_string(jobj_schema);
 
-	headers[0].value.value.bytes = amqp_cstring_bytes(user_auth_token);
-
 	/**
 	 * Exchange
 	 *	Type: Direct
@@ -535,11 +528,14 @@ int knot_cloud_update_schema(const char *id, struct l_queue *schema_list)
 	 * Expiration
 	 *	2000 ms
 	 */
-	result = mq_publish_direct_message(MQ_EXCHANGE_DEVICE,
-					   MQ_CMD_SCHEMA_SENT,
-					   headers, 1,
-					   MQ_MSG_EXPIRATION_TIME_MS,
-					   json_str);
+	mq_message_data_t mq_message = {
+		MQ_MESSAGE_TYPE_DIRECT,
+		MQ_EXCHANGE_DEVICE, MQ_CMD_SCHEMA_SENT,
+		MQ_MSG_EXPIRATION_TIME_MS, json_str,
+		NULL, NULL
+	};
+
+	result = mq_publish_message(&mq_message);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
@@ -550,9 +546,9 @@ int knot_cloud_update_schema(const char *id, struct l_queue *schema_list)
 
 /**
  * knot_cloud_list_devices:
- * 
+ *
  * Sends a request to cloud list all devices
- * 
+ *
  * Returns: 0 if successful and a KNoT error otherwise.
  */
 int knot_cloud_list_devices(void)
@@ -563,8 +559,6 @@ int knot_cloud_list_devices(void)
 
 	jobj_empty = json_object_new_object();
 	json_str = json_object_to_json_string(jobj_empty);
-
-	headers[0].value.value.bytes = amqp_cstring_bytes(user_auth_token);
 
 	/**
 	 * Exchange
@@ -577,14 +571,13 @@ int knot_cloud_list_devices(void)
 	 * Expiration
 	 *	2000 ms
 	 */
-	result = mq_publish_direct_message_rpc(MQ_EXCHANGE_DEVICE,
-					       MQ_CMD_DEVICE_LIST,
-					       headers, 1,
-					       MQ_MSG_EXPIRATION_TIME_MS,
-					       amqp_cstring_bytes(
-					       knot_cloud_events[LIST_MSG]),
-					       MQ_DEFAULT_CORRELATION_ID,
-					       json_str);
+	mq_message_data_t mq_message = {
+		MQ_MESSAGE_TYPE_DIRECT_RPC, MQ_EXCHANGE_DEVICE,
+		MQ_CMD_DEVICE_LIST, MQ_MSG_EXPIRATION_TIME_MS, json_str,
+		knot_cloud_events[LIST_MSG], MQ_DEFAULT_CORRELATION_ID
+	};
+
+	result = mq_publish_message(&mq_message);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
@@ -620,21 +613,20 @@ int knot_cloud_publish_data(const char *id, uint8_t sensor_id,
 
 	json_str = json_object_to_json_string(jobj_data);
 
-	headers[0].value.value.bytes = amqp_cstring_bytes(user_auth_token);
-
 	/**
 	 * Exchange
 	 *	Type: Fanout
 	 *	Name: data.sent
-	 * Headers
-	 *	[0]: User Token
 	 * Expiration
 	 *	2000 ms
 	 */
-	result = mq_publish_fanout_message(MQ_EXCHANGE_DATA_SENT,
-					   headers, 1,
-					   MQ_MSG_EXPIRATION_TIME_MS,
-					   json_str);
+	mq_message_data_t mq_message = {
+		MQ_MESSAGE_TYPE_FANOUT, MQ_EXCHANGE_DATA_SENT,
+		NULL, MQ_MSG_EXPIRATION_TIME_MS, json_str,
+		NULL, NULL
+	};
+
+	result = mq_publish_message(&mq_message);
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
@@ -681,11 +673,8 @@ int knot_cloud_start(char *url, char *user_token,
 		     void *user_data)
 {
 	user_auth_token = l_strdup(user_token);
-	headers[0].key = amqp_cstring_bytes(MQ_AUTHORIZATION_HEADER);
-	headers[0].value.kind = AMQP_FIELD_KIND_UTF8;
-	headers[0].value.value.bytes = amqp_cstring_bytes(user_token);
-
-	return mq_start(url, connected_cb, disconnected_cb, user_data);
+	return mq_start(url, connected_cb, disconnected_cb, user_data,
+				 user_auth_token);
 }
 
 void knot_cloud_stop(void)

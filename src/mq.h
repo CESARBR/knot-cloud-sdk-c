@@ -50,30 +50,40 @@
 
 #define MQ_DEFAULT_CORRELATION_ID "default-corrId"
 
+/**
+ * @brief Defines the type of message.
+ *
+ * This enum defines the mq's message type.
+ */
+typedef enum {
+	MQ_MESSAGE_TYPE_DIRECT = 1,
+	MQ_MESSAGE_TYPE_DIRECT_RPC,
+	MQ_MESSAGE_TYPE_FANOUT
+} mq_message_type;
+
+/**
+ * @brief Defines a mq message format.
+ *
+ * A mq message to be exchange under amqp's protocol. This struct helds
+ * authorization parameters, a header, an expiration time for the message and
+ * the message's body.
+ */
+typedef struct {
+	mq_message_type msg_type;
+	const char *exchange;
+	const char *routing_key;
+	uint64_t expiration_ms;
+	const char *body;
+	const char *reply_to;
+	const char *correlation_id;
+} mq_message_data_t;
+
 typedef bool (*mq_read_cb_t) (const char *exchange, const char *routing_key,
 			      const char *body, void *user_data);
 typedef void (*mq_connected_cb_t) (void *user_data);
 typedef void (*mq_disconnected_cb_t) (void *user_data);
 
-int8_t mq_publish_direct_message_rpc(const char *exchange,
-				     const char *routing_key,
-				     amqp_table_entry_t *headers,
-				     size_t num_headers,
-				     uint64_t expiration_ms,
-				     amqp_bytes_t reply_to,
-				     const char *correlation_id,
-				     const char *body);
-int8_t mq_publish_direct_message(const char *exchange,
-				 const char *routing_key,
-				 amqp_table_entry_t *headers,
-				 size_t num_headers,
-				 uint64_t expiration_ms,
-				 const char *body);
-int8_t mq_publish_fanout_message(const char *exchange,
-				 amqp_table_entry_t *headers,
-				 size_t num_headers,
-				 uint64_t expiration_ms,
-				 const char *body);
+int8_t mq_publish_message(const mq_message_data_t *message);
 int mq_prepare_direct_queue(amqp_bytes_t queue, const char *exchange,
 			    const char *routing_key);
 amqp_bytes_t mq_declare_new_queue(const char *name);
@@ -83,5 +93,6 @@ int mq_consumer_queue(amqp_bytes_t queue);
 int mq_set_read_cb(mq_read_cb_t read_cb, void *user_data);
 
 int mq_start(char *url, mq_connected_cb_t connected_cb,
-	     mq_disconnected_cb_t disconnected_cb, void *user_data);
+	     mq_disconnected_cb_t disconnected_cb, void *user_data,
+		 const char *user_token);
 void mq_stop(void);

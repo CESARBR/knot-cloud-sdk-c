@@ -43,6 +43,8 @@
 #define MQ_CONNECTION_TIMEOUT_US 10000
 #define MQ_CONNECTION_RETRY_TIMEOUT_MS 1000
 
+#define MQ_NUM_OF_HEADERS 1
+
 struct mq_context {
 	amqp_connection_state_t conn;
 	struct l_io *amqp_io;
@@ -54,6 +56,9 @@ struct mq_context {
 };
 
 static struct mq_context mq_ctx;
+static const int8_t num_of_headers = MQ_NUM_OF_HEADERS;
+amqp_table_entry_t headers[MQ_NUM_OF_HEADERS];
+amqp_bytes_t current_queue;
 
 static void on_disconnect(struct l_io *io, void *user_data)
 {
@@ -335,7 +340,7 @@ static int mq_prepare_queue(amqp_bytes_t queue, const char *exchange,
 	return 0;
 }
 
-static int mq_publish_message(const char *exchange,
+static int mq_publish(const char *exchange,
 			      const char *type,
 			      const char *routing_key,
 			      amqp_table_entry_t *headers,
@@ -434,15 +439,8 @@ static int mq_publish_message(const char *exchange,
 }
 
 /**
- * mq_publish_direct_message_rpc:
- * @exchange: exchange name
- * @routing_key: routing key name
- * @headers: array of table entry with headers
- * @num_headers: headers length
- * @expiration_ms: expiration property in miliseconds or 0 if no expiration time
- * @reply_to: queue that will process the reply
- * @correlation_id: id to identify the message on rpc
- * @body: the message to be sent
+ * mq_publish_message:
+ * @message: message data to be published
  *
  * Publish a message with exchange type Direct with a
  * Remote Procedure Call (RPC) pattern to relate a message
@@ -450,69 +448,38 @@ static int mq_publish_message(const char *exchange,
  *
  * Returns: 0 if successful and negative integer otherwise.
  */
-int8_t mq_publish_direct_message_rpc(const char *exchange,
-				     const char *routing_key,
-				     amqp_table_entry_t *headers,
-				     size_t num_headers,
-				     uint64_t expiration_ms,
-				     amqp_bytes_t reply_to,
-				     const char *correlation_id,
-				     const char *body)
-{
-	return mq_publish_message(exchange, AMQP_EXCHANGE_TYPE_DIRECT,
-				  routing_key, headers,
-				  num_headers, expiration_ms,
-				  reply_to, correlation_id, body);
-}
-
-/**
- * mq_publish_direct_message:
- * @exchange: exchange name
- * @routing_key: routing key name
- * @headers: array of table entry with headers
- * @num_headers: headers length
- * @expiration_ms: expiration property in miliseconds or 0 if no expiration time
- * @body: the message to be sent
- *
- * Publish a message with exchange type Direct
- *
- * Returns: 0 if successful and negative integer otherwise.
- */
-int8_t mq_publish_direct_message(const char *exchange,
-				 const char *routing_key,
-				 amqp_table_entry_t *headers,
-				 size_t num_headers,
-				 uint64_t expiration_ms,
-				 const char *body)
-{
-	return mq_publish_message(exchange, AMQP_EXCHANGE_TYPE_DIRECT,
-				  routing_key, headers,
-				  num_headers, expiration_ms,
-				  amqp_empty_bytes, NULL, body);
-}
-
-/**
- * mq_publish_fanout_message:
- * @exchange: exchange name
- * @headers: array of table entry with headers
- * @num_headers: headers length
- * @expiration_ms: expiration property in miliseconds or 0 if no expiration time
- * @body: the message to be sent
- *
- * Publish a message with exchange type Fanout.
- *
- * Returns: 0 if successful and negative integer otherwise.
- */
-int8_t mq_publish_fanout_message(const char *exchange,
-				 amqp_table_entry_t *headers,
-				 size_t num_headers,
-				 uint64_t expiration_ms,
-				 const char *body)
-{
-	return mq_publish_message(exchange, AMQP_EXCHANGE_TYPE_FANOUT,
-				  NULL, headers,
-				  num_headers, expiration_ms,
-				  amqp_empty_bytes, NULL, body);
+int8_t mq_publish_message(const mq_message_data_t *message) {
+	int8_t res;
+	switch (message->msg_type) {
+		case MQ_MESSAGE_TYPE_DIRECT:
+			res = mq_publish(message->exchange,
+				AMQP_EXCHANGE_TYPE_DIRECT,
+				message->routing_key, headers, num_of_headers,
+				message->expiration_ms, amqp_empty_bytes, NULL,
+				message->body);
+			break;
+		case MQ_MESSAGE_TYPE_DIRECT_RPC:
+			{
+				amqp_bytes_t reply_to = amqp_cstring_bytes(
+					message->reply_to);
+				res = mq_publish(message->exchange,
+					AMQP_EXCHANGE_TYPE_DIRECT,
+					message->routing_key, headers,
+					num_of_headers, message->expiration_ms,
+					reply_to, message->correlation_id,
+					message->body);
+			break;
+			}
+		case MQ_MESSAGE_TYPE_FANOUT:
+			res = mq_publish(message->exchange,
+				AMQP_EXCHANGE_TYPE_FANOUT, NULL, headers,
+				num_of_headers, message->expiration_ms,
+				amqp_empty_bytes, NULL, message->body);
+			break;
+		default:
+			res = -1;
+	}
+	return res;
 }
 
 /**
@@ -655,8 +622,13 @@ int mq_set_read_cb(mq_read_cb_t read_cb, void *user_data)
 }
 
 int mq_start(char *url, mq_connected_cb_t connected_cb,
-	     mq_disconnected_cb_t disconnected_cb, void *user_data)
+	     mq_disconnected_cb_t disconnected_cb, void *user_data,
+		 const char *user_token)
 {
+	headers[0].key = amqp_cstring_bytes(MQ_AUTHORIZATION_HEADER);
+	headers[0].value.kind = AMQP_FIELD_KIND_UTF8;
+	headers[0].value.value.bytes = amqp_cstring_bytes(user_token);
+
 	mq_ctx.connected_cb = connected_cb;
 	mq_ctx.disconnected_cb = disconnected_cb;
 	mq_ctx.connection_data = user_data;
