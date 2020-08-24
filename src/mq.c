@@ -40,7 +40,8 @@
 #define AMQP_EXCHANGE_TYPE_DIRECT "direct"
 #define AMQP_EXCHANGE_TYPE_FANOUT "fanout"
 
-#define MQ_CONNECTION_TIMEOUT_US 10000
+#define MQ_CONNECTION_CONSUME_TIMEOUT_US 10000
+#define MQ_CONNECTION_CONNECT_TIMEOUT_SEC 10
 #define MQ_CONNECTION_RETRY_TIMEOUT_MS 1000
 
 struct mq_context {
@@ -143,7 +144,7 @@ static void attempt_connection(struct l_timeout *ltimeout, void *user_data)
 	struct amqp_connection_info cinfo;
 	char *tmp_url = l_strdup(url);
 	amqp_rpc_reply_t r;
-	struct timeval timeout = { .tv_usec = MQ_CONNECTION_TIMEOUT_US };
+	struct timeval timeout = {.tv_sec = MQ_CONNECTION_CONNECT_TIMEOUT_SEC};
 	int status;
 
 	l_debug("Trying to connect to rabbitmq");
@@ -260,7 +261,7 @@ static bool on_receive(struct l_io *io, void *user_data)
 	amqp_rpc_reply_t res;
 	amqp_envelope_t envelope;
 	char *exchange, *routing_key, *body;
-	struct timeval time_out = { .tv_usec = MQ_CONNECTION_TIMEOUT_US };
+	struct timeval time_out = {.tv_usec = MQ_CONNECTION_CONSUME_TIMEOUT_US};
 	bool success;
 
 	if (amqp_release_buffers_ok(mq_ctx.conn))
