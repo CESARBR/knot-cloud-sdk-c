@@ -309,8 +309,8 @@ static bool on_receive(struct l_io *io, void *user_data)
 	return true;
 }
 
-static int mq_prepare_queue(amqp_bytes_t queue, const char *exchange,
-			    const char *exchange_type, const char *routing_key)
+static int mq_prepare_queue(const char *exchange, const char *exchange_type,
+		 const char *routing_key)
 {
 	if (exchange == NULL || exchange_type == NULL || routing_key == NULL)
 		return -1;
@@ -326,7 +326,7 @@ static int mq_prepare_queue(amqp_bytes_t queue, const char *exchange,
 			amqp_empty_table);
 
 	/* Set up to bind a queue to an exchange */
-	amqp_queue_bind(mq_ctx.conn, 1, queue,
+	amqp_queue_bind(mq_ctx.conn, 1, current_queue,
 			amqp_cstring_bytes(exchange),
 			amqp_cstring_bytes(routing_key),
 			amqp_empty_table);
@@ -484,7 +484,7 @@ int8_t mq_publish_message(const mq_message_data_t *message) {
 
 /**
  * mq_prepare_direct_queue:
- * @queue: queue declared
+ * @name: queue's name
  * @exchange: exchange to be declared
  * @routing_key: routing key to bind
  *
@@ -492,29 +492,28 @@ int8_t mq_publish_message(const mq_message_data_t *message) {
  *
  * Returns: 0 if successful and -1 otherwise.
  */
-int mq_prepare_direct_queue(amqp_bytes_t queue, const char *exchange,
+int mq_prepare_direct_queue(const char *exchange,
 			    const char *routing_key)
 {
-	return mq_prepare_queue(queue, exchange, AMQP_EXCHANGE_TYPE_DIRECT,
-				routing_key);
+	return mq_prepare_queue(exchange, AMQP_EXCHANGE_TYPE_DIRECT,
+				 routing_key);
 }
 
 /**
  * mq_declare_new_queue:
- * @name: queue name
+ * @name: queue's name
  *
  * Declares a durable queue in amqp connection.
  *
  * Returns: the queue declared or NULL otherwise.
  */
-amqp_bytes_t mq_declare_new_queue(const char *name)
+int mq_declare_new_queue(const char *name)
 {
-	amqp_bytes_t queue;
 	amqp_queue_declare_ok_t *r;
 
 	if (!mq_ctx.conn) {
-		queue.bytes = NULL;
-		return queue;
+		current_queue.bytes = NULL;
+		return -1;
 	}
 
 	r = amqp_queue_declare(mq_ctx.conn, 1,
@@ -528,53 +527,50 @@ amqp_bytes_t mq_declare_new_queue(const char *name)
 	if (amqp_get_rpc_reply(mq_ctx.conn).reply_type !=
 			       AMQP_RESPONSE_NORMAL) {
 		l_error("Error declaring queue name");
-		queue.bytes = NULL;
-		return queue;
+		current_queue.bytes = NULL;
+		return -1;
 	}
 
-	queue = amqp_bytes_malloc_dup(r->queue);
-	if (queue.bytes == NULL)
+	current_queue = amqp_bytes_malloc_dup(r->queue);
+	if (current_queue.bytes == NULL)
 		l_error("Out of memory while copying queue buffer");
 
-	return queue;
+	return 1;
 }
 
 /**
  * mq_delete_queue:
- * @name: queue name
  *
- * Delete a queue in amqp connection.
+ * Delete the current queue in amqp connection.
  *
- * Returns: 0 if successful and -1 otherwise.
  */
-int mq_delete_queue(amqp_bytes_t queue)
+void mq_delete_queue(void)
 {
-	if (!mq_ctx.conn)
-		return -1;
-
-	amqp_queue_delete(mq_ctx.conn, 1, queue, 0, 0);
-	if (amqp_get_rpc_reply(mq_ctx.conn).reply_type !=
-			       AMQP_RESPONSE_NORMAL) {
-		l_error("Error deleting queue name");
-		return -1;
+	if (current_queue.bytes) {
+		if (mq_ctx.conn) {
+			amqp_queue_delete(mq_ctx.conn, 1, current_queue,
+				0, 0);
+			amqp_rpc_reply_t res = amqp_get_rpc_reply(mq_ctx.conn);
+			if (res.reply_type != AMQP_RESPONSE_NORMAL) {
+				l_error("Error deleting queue name");
+			}
+		}
+		amqp_bytes_free(current_queue);
+		current_queue = amqp_empty_bytes;
 	}
-
-	return 0;
 }
 
 /**
  * mq_consumer_queue:
- * @queue: queue that is going to be consume
  *
  * Start a queue consumer.
  *
  * Returns: 0 if successful and -1 otherwise.
  */
-int mq_consumer_queue(amqp_bytes_t queue)
+int mq_consumer_queue(void)
 {
-	/* Start a queue consumer */
 	amqp_basic_consume(mq_ctx.conn, 1,
-			queue,
+			current_queue,
 			amqp_empty_bytes,
 			0, /* no_local */
 			1, /* no_ack */
@@ -642,6 +638,7 @@ int mq_start(char *url, mq_connected_cb_t connected_cb,
 
 void mq_stop(void)
 {
+	mq_delete_queue();
 	l_timeout_remove(mq_ctx.conn_retry_timeout);
 	mq_ctx.conn_retry_timeout = NULL;
 

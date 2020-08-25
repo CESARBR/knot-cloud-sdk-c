@@ -84,14 +84,12 @@ typedef void (*mq_connected_cb_t) (void *user_data);
 typedef void (*mq_disconnected_cb_t) (void *user_data);
 
 int8_t mq_publish_message(const mq_message_data_t *message);
-int mq_prepare_direct_queue(amqp_bytes_t queue, const char *exchange,
-			    const char *routing_key);
-amqp_bytes_t mq_declare_new_queue(const char *name);
-int mq_delete_queue(amqp_bytes_t queue);
-int mq_consumer_queue(amqp_bytes_t queue);
-
+int mq_prepare_direct_queue(const char *exchange,
+			 const char *routing_key);
+int mq_declare_new_queue(const char *name);
+void mq_delete_queue(void);
+int mq_consumer_queue(void);
 int mq_set_read_cb(mq_read_cb_t read_cb, void *user_data);
-
 int mq_start(char *url, mq_connected_cb_t connected_cb,
 	     mq_disconnected_cb_t disconnected_cb, void *user_data,
 		 const char *user_token);

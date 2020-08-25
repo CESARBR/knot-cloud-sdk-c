@@ -41,7 +41,6 @@
 #include "knot_cloud.h"
 
 knot_cloud_cb_t knot_cloud_cb;
-amqp_bytes_t queue_fog;
 char *user_auth_token;
 char *knot_cloud_events[MSG_TYPES_LENGTH];
 
@@ -264,14 +263,14 @@ static int create_cloud_queue(const char *id)
 	snprintf(queue_fog_name, sizeof(queue_fog_name), "%s-%s",
 		 MQ_QUEUE_FOG_OUT, id);
 
-	queue_fog = mq_declare_new_queue(queue_fog_name);
-	if (queue_fog.bytes == NULL) {
+	err = mq_declare_new_queue(queue_fog_name);
+	if (err < 0) {
 		l_error("Error on declare a new queue");
-		return -1;
+		return err;
 	}
 
 	for (msg_type = UPDATE_MSG; msg_type < MSG_TYPES_LENGTH; msg_type++) {
-		err = mq_prepare_direct_queue(queue_fog, MQ_EXCHANGE_DEVICE,
+		err = mq_prepare_direct_queue(MQ_EXCHANGE_DEVICE,
 					      knot_cloud_events[msg_type]);
 		if (err) {
 			l_error("Error on set up queue to consume");
@@ -279,7 +278,7 @@ static int create_cloud_queue(const char *id)
 		}
 	}
 
-	err = mq_consumer_queue(queue_fog);
+	err = mq_consumer_queue();
 	if (err) {
 		l_error("Error on start a queue consumer");
 		return -1;
@@ -338,17 +337,6 @@ static int set_knot_cloud_events(const char *id)
 				l_strdup(binding_key_list_reply);
 
 	return 0;
-}
-
-static void destroy_cloud_queue(void)
-{
-	if (queue_fog.bytes) {
-		if (mq_delete_queue(queue_fog))
-			l_error("Error when delete Fog Queue");
-
-		amqp_bytes_free(queue_fog);
-		queue_fog = amqp_empty_bytes;
-	}
 }
 
 /**
@@ -651,7 +639,7 @@ int knot_cloud_read_start(const char *id, knot_cloud_cb_t read_handler_cb,
 	knot_cloud_cb = read_handler_cb;
 
 	/* Delete queues if already declared */
-	destroy_cloud_queue();
+	mq_delete_queue();
 
 	if (set_knot_cloud_events(id))
 		return -1;
@@ -679,8 +667,6 @@ int knot_cloud_start(char *url, char *user_token,
 
 void knot_cloud_stop(void)
 {
-	destroy_cloud_queue();
-
 	destroy_knot_cloud_events();
 	mq_stop();
 }
