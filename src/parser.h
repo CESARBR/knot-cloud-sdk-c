@@ -14,6 +14,21 @@
  *  Lesser General Public License for more details.
  */
 
+/* JSON Fields (keys) related to KNOT messages */
+#define KNOT_JSON_FIELD_DEVICE_NAME	"name"
+#define KNOT_JSON_FIELD_DEVICE_ID	"id"
+#define KNOT_JSON_FIELD_DEVICE_TOKEN	"token"
+#define KNOT_JSON_FIELD_SCHEMA		"schema"
+#define KNOT_JSON_FIELD_DATA		"data"
+#define KNOT_JSON_FIELD_DEVICES		"devices"
+#define KNOT_JSON_FIELD_SENSOR_ID	"sensorId"
+#define KNOT_JSON_FIELD_SENSOR_IDS	"sensorIds"
+#define KNOT_JSON_FIELD_VALUE		"value"
+#define KNOT_JSON_FIELD_VALUE_TYPE	"valueType"
+#define KNOT_JSON_FIELD_UNIT		"unit"
+#define KNOT_JSON_FIELD_TYPE_ID		"typeId"
+#define KNOT_JSON_FIELD_ERROR		"error"
+
 typedef void *(*parser_json_array_item_cb) (json_object *array_item);
 
 json_object *parser_schema_create_object(const char *device_id,
