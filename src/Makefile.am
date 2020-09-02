@@ -10,7 +10,7 @@ libknotcloudsdkc_include_HEADERS = $(lib_headers)
 lib_LTLIBRARIES = libknotcloudsdkc.la
 libknotcloudsdkc_la_SOURCES = $(lib_headers) $(lib_sources)
 libknotcloudsdkc_la_LIBADD = $(modules_libadd) -lm
-libknotcloudsdkc_la_CFLAGS = $(AM_CFLAGS) $(modules_cflags)
+libknotcloudsdkc_la_CFLAGS = $(AM_CFLAGS) $(modules_cflags) -Werror
 libknotcloudsdkc_la_LDFLAGS = $(AM_LDFLAGS)
 
 pkgconfigdir = $(libdir)/pkgconfig

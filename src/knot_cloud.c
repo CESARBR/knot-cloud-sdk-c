@@ -68,36 +68,12 @@ static void knot_cloud_msg_destroy(struct knot_cloud_msg *msg)
 
 	l_free(msg);
 }
-
-static void *knot_cloud_device_array_foreach(json_object *array_item)
+// criar esse for each la no parser.. passar os params pela chamada
+// schema, id e name.
+static void *create_device_item(const char *id, const char *name,
+				struct l_queue *schema)
 {
-	json_object *jobjkey;
 	struct knot_cloud_device *device;
-	struct l_queue *schema;
-	const char *id, *name;
-
-	/* Getting 'Id': Mandatory field for registered device */
-	id = parser_get_key_str_from_json_obj(array_item,
-		KNOT_JSON_FIELD_DEVICE_ID);
-	if (!id)
-		return NULL;
-
-	/* Getting 'schema': Mandatory field for registered device */
-	/* FIXME: Call a parser function instead of json-c function*/
-	if (!json_object_object_get_ex(array_item, 
-			KNOT_JSON_FIELD_SCHEMA, &jobjkey))
-		return NULL;
-
-	schema = parser_schema_to_list(json_object_to_json_string(jobjkey));
-	if (!schema)
-		return NULL;
-
-	/* Getting 'Name' */
-	name = parser_get_key_str_from_json_obj(array_item,
-		KNOT_JSON_FIELD_DEVICE_NAME);
-	if (!name)
-		return NULL;
-
 	device = l_new(struct knot_cloud_device, 1);
 	device->id = l_strdup(id);
 	device->name = l_strdup(name);
@@ -120,127 +96,78 @@ static int map_routing_key_to_msg_type(const char *routing_key)
 }
 
 static struct knot_cloud_msg *create_msg(const char *routing_key,
-					 json_object *jso)
+					 const char *json_str)
 {
+	bool has_err;
+
 	struct knot_cloud_msg *msg = l_new(struct knot_cloud_msg, 1);
 
 	msg->type = map_routing_key_to_msg_type(routing_key);
 
+	has_err = false;
+	if (msg->type == LIST_MSG) {
+		msg->device_id = NULL;
+	} else {
+		msg->device_id = parser_get_key_str_from_json_str(json_str,
+			KNOT_JSON_FIELD_DEVICE_ID);
+		has_err = msg->device_id ? false : true;
+	}
+
+	if (msg->type == UPDATE_MSG || msg->type == REGISTER_MSG) {
+		msg->error = NULL;
+	} else {
+		if (!parser_is_key_str_or_null(json_str,
+				KNOT_JSON_FIELD_ERROR)) {
+			has_err = true;
+		} else {
+			msg->error = parser_get_key_str_from_json_str(json_str,
+				KNOT_JSON_FIELD_ERROR);
+			has_err = msg->error ? false : true;
+		}
+	}
+
+	if (has_err) {
+		l_error("Ill-formed JSON message");
+		knot_cloud_msg_destroy(msg);
+		return NULL;
+	}
+
 	switch (msg->type) {
 	case UPDATE_MSG:
-		msg->error = NULL;
-		msg->device_id = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_DEVICE_ID);
-		if (!msg->device_id) {
-			l_error("Malformed JSON message");
-			goto err;
-		}
-
-		msg->list = parser_update_to_list(jso);
-		if (!msg->list) {
-			l_error("Malformed JSON message");
-			goto err;
-		}
-
+		msg->list = parser_update_to_list(json_str);
+		has_err = msg->list ? false : true;
 		break;
 	case REQUEST_MSG:
-		msg->error = NULL;
-		msg->device_id = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_DEVICE_ID);
-		if (!msg->device_id) {
-			l_error("Malformed JSON message");
-			goto err;
-		}
-
-		msg->list = parser_request_to_list(jso);
-		if (!msg->list) {
-			l_error("Malformed JSON message");
-			goto err;
-		}
-
+		msg->list = parser_request_to_list(json_str);
+		has_err = msg->list ? false : true;
 		break;
 	case REGISTER_MSG:
-		msg->device_id = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_DEVICE_ID);
-		if (!msg->device_id ||
-				!parser_is_key_str_or_null(jso,
-						KNOT_JSON_FIELD_ERROR)) {
-			l_error("Malformed JSON message");
-			goto err;
-		}
-
-		msg->token = parser_get_key_str_from_json_obj(jso,
+		msg->token = parser_get_key_str_from_json_str(json_str,
 			KNOT_JSON_FIELD_DEVICE_TOKEN);
-		if (!msg->token) {
-			l_error("Malformed JSON message");
-			goto err;
-		}
-
-		msg->error = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_ERROR);
+		has_err = msg->token ? false : true;
 		break;
 	case UNREGISTER_MSG:
-		msg->device_id = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_DEVICE_ID);
-		if (!msg->device_id ||
-				!parser_is_key_str_or_null(jso,
-					KNOT_JSON_FIELD_ERROR)) {
-			l_error("Malformed JSON message");
-			goto err;
-		}
-
-		msg->error = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_ERROR);
-		break;
 	case AUTH_MSG:
-		msg->device_id = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_DEVICE_ID);
-		if (!msg->device_id ||
-				!parser_is_key_str_or_null(jso,
-					KNOT_JSON_FIELD_ERROR)) {
-			l_error("Malformed JSON message");
-			goto err;
-		}
-
-		msg->error = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_ERROR);
-		break;
 	case SCHEMA_MSG:
-		msg->device_id = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_DEVICE_ID);
-		if (!msg->device_id ||
-				!parser_is_key_str_or_null(jso,
-					KNOT_JSON_FIELD_ERROR)) {
-			l_error("Malformed JSON message");
-			goto err;
-		}
-
-		msg->error = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_ERROR);
 		break;
 	case LIST_MSG:
-		msg->device_id = NULL;
-		msg->list = parser_queue_from_json_array(jso,
-					knot_cloud_device_array_foreach);
-		if (!msg->list || !parser_is_key_str_or_null(jso,
-				KNOT_JSON_FIELD_ERROR)) {
-			l_error("Malformed JSON message");
-			goto err;
-		}
-
-		msg->error = parser_get_key_str_from_json_obj(jso,
-			KNOT_JSON_FIELD_ERROR);
+		msg->list = parser_queue_from_json_array(json_str,
+				create_device_item);
+		has_err = msg->list ? false : true;
 		break;
 	case MSG_TYPES_LENGTH:
 	default:
 		l_error("Unknown event %s", routing_key);
-		goto err;
+		has_err = true;
+		break;
 	}
 
+	if (has_err) {
+		l_error("Ill-formed JSON message");
+		knot_cloud_msg_destroy(msg);
+		return NULL;
+	}
 	return msg;
-err:
-	knot_cloud_msg_destroy(msg);
-	return NULL;
 }
 
 /**
@@ -256,22 +183,11 @@ static bool on_amqp_receive_message(const char *exchange,
 {
 	struct knot_cloud_msg *msg;
 	bool consumed = true;
-	json_object *jso;
-
-	jso = json_tokener_parse(body);
-	if (!jso) {
-		l_error("Error on parse JSON object");
-		return false;
-	}
-
-	msg = create_msg(routing_key, jso);
+	msg = create_msg(routing_key, body);
 	if (msg) {
 		consumed = knot_cloud_cb(msg, user_data);
 		knot_cloud_msg_destroy(msg);
 	}
-
-	json_object_put(jso);
-
 	return consumed;
 }
 
@@ -393,15 +309,12 @@ void knot_cloud_set_log_priority(char *priority)
  */
 int knot_cloud_register_device(const char *id, const char *name)
 {
-	json_object *jobj_device;
-	const char *json_str;
+	char *json_str;
 	int result;
 
-	jobj_device = parser_device_json_create(id, name);
-	if (!jobj_device)
+	json_str = parser_device_json_create(id, name);
+	if (!json_str)
 		return KNOT_ERR_CLOUD_FAILURE;
-
-	json_str = json_object_to_json_string(jobj_device);
 
 	/**
 	 * Exchange
@@ -424,7 +337,7 @@ int knot_cloud_register_device(const char *id, const char *name)
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
-	json_object_put(jobj_device);
+	l_free(json_str);
 
 	return result;
 }
@@ -441,15 +354,12 @@ int knot_cloud_register_device(const char *id, const char *name)
  */
 int knot_cloud_unregister_device(const char *id)
 {
-	json_object *jobj_unreg;
-	const char *json_str;
+	char *json_str;
 	int result;
 
-	jobj_unreg = parser_unregister_json_create(id);
-	if (!jobj_unreg)
+	json_str = parser_unregister_json_create(id);
+	if (!json_str)
 		return KNOT_ERR_CLOUD_FAILURE;
-
-	json_str = json_object_to_json_string(jobj_unreg);
 
 	/**
 	 * Exchange
@@ -472,7 +382,7 @@ int knot_cloud_unregister_device(const char *id)
 	if (result < 0)
 		return KNOT_ERR_CLOUD_FAILURE;
 
-	json_object_put(jobj_unreg);
+	l_free(json_str);
 
 	return 0;
 }
@@ -490,15 +400,12 @@ int knot_cloud_unregister_device(const char *id)
  */
 int knot_cloud_auth_device(const char *id, const char *token)
 {
-	json_object *jobj_auth;
-	const char *json_str;
+	char *json_str;
 	int result;
 
-	jobj_auth = parser_auth_json_create(id, token);
-	if (!jobj_auth)
+	json_str = parser_auth_json_create(id, token);
+	if (!json_str)
 		return KNOT_ERR_CLOUD_FAILURE;
-
-	json_str = json_object_to_json_string(jobj_auth);
 
 	/**
 	 * Exchange
@@ -520,7 +427,7 @@ int knot_cloud_auth_device(const char *id, const char *token)
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
-	json_object_put(jobj_auth);
+	l_free(json_str);
 
 	return result;
 }
@@ -536,15 +443,14 @@ int knot_cloud_auth_device(const char *id, const char *token)
  */
 int knot_cloud_update_schema(const char *id, struct l_queue *schema_list)
 {
-	json_object *jobj_schema;
-	const char *json_str;
+	char *json_str;
 	int result;
 
-	jobj_schema = parser_schema_create_object(id, schema_list);
-	if (!jobj_schema)
+	json_str = parser_schema_create_object(id, schema_list);
+	if (!json_str)
 		return KNOT_ERR_CLOUD_FAILURE;
 
-	json_str = json_object_to_json_string(jobj_schema);
+	/*json_str = json_object_to_json_string(jobj_schema);*/
 
 	/**
 	 * Exchange
@@ -568,8 +474,7 @@ int knot_cloud_update_schema(const char *id, struct l_queue *schema_list)
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
-	json_object_put(jobj_schema);
-
+	l_free(json_str);
 	return result;
 }
 
@@ -631,16 +536,13 @@ int knot_cloud_publish_data(const char *id, uint8_t sensor_id,
 			    uint8_t value_type, const knot_value_type *value,
 			    uint8_t kval_len)
 {
-	json_object *jobj_data;
-	const char *json_str;
+	char *json_str;
 	int result;
 
-	jobj_data = parser_data_create_object(id, sensor_id, value_type, value,
+	json_str = parser_data_create_object(id, sensor_id, value_type, value,
 					      kval_len);
-	if (!jobj_data)
+	if (!json_str)
 		return KNOT_ERR_CLOUD_FAILURE;
-
-	json_str = json_object_to_json_string(jobj_data);
 
 	/**
 	 * Exchange
@@ -659,7 +561,7 @@ int knot_cloud_publish_data(const char *id, uint8_t sensor_id,
 	if (result < 0)
 		result = KNOT_ERR_CLOUD_FAILURE;
 
-	json_object_put(jobj_data);
+	l_free(json_str);
 
 	return result;
 }
