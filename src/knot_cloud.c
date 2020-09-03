@@ -53,7 +53,7 @@ static void knot_cloud_device_free(void *data)
 	if (unlikely(!device))
 		return;
 
-	l_queue_destroy(device->schema, l_free);
+	l_queue_destroy(device->config_list, l_free);
 	l_free(device->id);
 	l_free(device->uuid);
 	l_free(device->name);
@@ -74,7 +74,7 @@ static void knot_cloud_msg_destroy(struct knot_cloud_msg *msg)
 }
 
 static void *create_device_item(const char *id, const char *name,
-		struct l_queue *schema)
+				struct l_queue *config_list)
 {
 	struct knot_cloud_device *device;
 
@@ -82,7 +82,7 @@ static void *create_device_item(const char *id, const char *name,
 	device->id = l_strdup(id);
 	device->name = l_strdup(name);
 	device->uuid = l_strdup(id);
-	device->schema = schema;
+	device->config_list = config_list;
 
 	return device;
 }
@@ -146,7 +146,10 @@ static struct knot_cloud_msg *create_msg(const char *routing_key,
 		break;
 	case UNREGISTER_MSG:
 	case AUTH_MSG:
-	case SCHEMA_MSG:
+		break;
+	case CONFIG_MSG:
+		msg->list = parser_config_to_list(json_str);
+		has_err = msg->list ? false : true;
 		break;
 	case LIST_MSG:
 		msg->list = parser_queue_from_json_array(json_str,
@@ -269,8 +272,8 @@ static int set_knot_cloud_events(const char *id)
 				l_strdup(MQ_EVENT_DEVICE_UNREGISTERED);
 	knot_cloud_events[AUTH_MSG] =
 				l_strdup(binding_key_auth_reply);
-	knot_cloud_events[SCHEMA_MSG] =
-				l_strdup(MQ_EVENT_DEVICE_SCHEMA_UPDATED);
+	knot_cloud_events[CONFIG_MSG] =
+				l_strdup(MQ_EVENT_DEVICE_CONFIG_UPDATED);
 	knot_cloud_events[LIST_MSG] =
 				l_strdup(binding_key_list_reply);
 
@@ -444,20 +447,20 @@ int knot_cloud_auth_device(const char *id, const char *token)
 }
 
 /**
- * knot_cloud_update_schema:
+ * knot_cloud_update_config:
  *
- * Requests cloud to update the device schema.
+ * Requests cloud to update the device config.
  * The confirmation that the cloud received the message comes from a callback
- * set in function knot_cloud_read_start with message type SCHEMA_MSG.
+ * set in function knot_cloud_read_start with message type CONFIG_MSG.
  *
  * Returns: 0 if successful and a KNoT error otherwise.
  */
-int knot_cloud_update_schema(const char *id, struct l_queue *schema_list)
+int knot_cloud_update_config(const char *id, struct l_queue *config_list)
 {
 	char *json_str;
 	int result;
 
-	json_str = parser_schema_create_object(id, schema_list);
+	json_str = parser_config_create_object(id, config_list);
 	if (!json_str)
 		return KNOT_ERR_CLOUD_FAILURE;
 
@@ -466,7 +469,7 @@ int knot_cloud_update_schema(const char *id, struct l_queue *schema_list)
 	 *	Type: Direct
 	 *	Name: device
 	 * Routing Key
-	 *	Name: device.schema.sent
+	 *	Name: device.config.sent
 	 * Headers
 	 *	[0]: User Token
 	 * Expiration
@@ -474,7 +477,7 @@ int knot_cloud_update_schema(const char *id, struct l_queue *schema_list)
 	 */
 	mq_message_data_t mq_message = {
 		MQ_MESSAGE_TYPE_DIRECT,
-		MQ_EXCHANGE_DEVICE, MQ_CMD_SCHEMA_SENT,
+		MQ_EXCHANGE_DEVICE, MQ_CMD_CONFIG_SENT,
 		MQ_MSG_EXPIRATION_TIME_MS, json_str,
 		NULL, NULL
 	};

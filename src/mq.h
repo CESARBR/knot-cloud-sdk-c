@@ -36,7 +36,7 @@
 
 #define MQ_EVENT_DEVICE_REGISTERED "device.registered"
 #define MQ_EVENT_DEVICE_UNREGISTERED "device.unregistered"
-#define MQ_EVENT_DEVICE_SCHEMA_UPDATED "device.schema.updated"
+#define MQ_EVENT_DEVICE_CONFIG_UPDATED "device.config.updated"
 
 #define MQ_EVENT_AUTH_REPLY "thingd-auth-reply"
 #define MQ_EVENT_LIST_REPLY "thingd-list-reply"
@@ -45,7 +45,7 @@
 #define MQ_CMD_DEVICE_REGISTER "device.register"
 #define MQ_CMD_DEVICE_UNREGISTER "device.unregister"
 #define MQ_CMD_DEVICE_AUTH "device.auth"
-#define MQ_CMD_SCHEMA_SENT "device.schema.sent"
+#define MQ_CMD_CONFIG_SENT "device.config.sent"
 #define MQ_CMD_DEVICE_LIST "device.list"
 
 #define MQ_DEFAULT_CORRELATION_ID "default-corrId"
