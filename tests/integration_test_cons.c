@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <unistd.h>
 #include <string.h>
+#include <errno.h>
 
 #include <ell/ell.h>
 #include <json-c/json.h>
@@ -148,8 +149,10 @@ static amqp_bytes_t consume_mensages(char const *exchange,char const *bindingkey
 		// return NULL;
 	}
 
-	msg = envelope.message.body;
+	// msg = envelope.message.body;
 
+	msg.bytes = l_memdup(envelope.message.body.bytes, envelope.message.body.len);
+	msg.len = envelope.message.body.len;
 
 	die_on_amqp_error(amqp_channel_close(conn, 1, AMQP_REPLY_SUCCESS),
 			  "Closing channel");
@@ -170,56 +173,146 @@ static amqp_bytes_t consume_mensages(char const *exchange,char const *bindingkey
 	return msg;
 }
 
-int verify_publish_data()
-{
-	amqp_bytes_t res;
-
-	res = consume_mensages(DATA_EXCHANGE,KEY_DATA);
-
-	l_info("%s",stringify_bytes(res));
-	return 0;
-}
 int verify_register_device()
 {
 	amqp_bytes_t res;
-
+	char *msg;
 
 	res = consume_mensages(DEVICE_EXCHANGE,EVENT_REGISTER);
 
-	// l_info("%s",stringify_bytes(res));
+	msg = stringify_bytes(res);
+
+	if(strcmp(msg,
+	   "{ \"name\": \"TESTDEVICE\", \"id\": \"5b620bcd419afed7\" }") != 0)
+	{
+		l_error("DATA DOESN'T MATCH EXPECTED");
+
+		amqp_bytes_free(res);
+		free(msg);
+
+		return -EINVAL;
+	}
+
+	amqp_bytes_free(res);
+
+	free(msg);
+
 	return 0;
 }
 
 int verify_auth_device()
 {
 	amqp_bytes_t res;
-
+	char *msg;
 
 	res = consume_mensages(DEVICE_EXCHANGE,EVENT_AUTH);
 
-	// l_info("%s",stringify_bytes(res));
+	msg = stringify_bytes(res);
+
+	if(strcmp(msg,
+	   "{ \"id\": \"5b620bcd419afed7\", \"token\": "
+	   "\"41aa0229342ecf8eb686cde53f739c1c3da9c1c5\" }") != 0)
+	{
+		l_error("DATA DOESN'T MATCH EXPECTED");
+
+		amqp_bytes_free(res);
+		free(msg);
+
+		return -EINVAL;
+	}
+
+	amqp_bytes_free(res);
+
+	free(msg);
+
 	return 0;
 }
 
 int verify_update_schema()
 {
 	amqp_bytes_t res;
+	char *msg;
 
 
 	res = consume_mensages(DEVICE_EXCHANGE,EVENT_SCHEMA);
 
-	// l_info("%s",stringify_bytes(res));
+	msg = stringify_bytes(res);
+
+	if(strcmp(msg,
+	   "{ \"id\": \"DEVICE_ID\", \"schema\": [ { \"sensorId\": 72,"
+	   " \"valueType\": 69, \"unit\": 77, \"typeId\": 8257, \"name\":"
+	   " \"DATA\" } ] }") != 0)
+	{
+		l_error("DATA DOESN'T MATCH EXPECTED");
+
+		amqp_bytes_free(res);
+		free(msg);
+
+		return -EINVAL;
+	}
+
+	amqp_bytes_free(res);
+
+	free(msg);
+
+	return 0;
+}
+
+int verify_publish_data()
+{
+	amqp_bytes_t res;
+	char *msg;
+
+	res = consume_mensages(DATA_EXCHANGE,KEY_DATA);
+
+
+	msg = stringify_bytes(res);
+
+	l_info("%s",msg);
+	if(strcmp(msg,
+	   "{ \"id\": \"TEST_SENSOR\", \"data\": "
+	   "[ { \"sensorId\": 12, \"value\": -16778544 } ] }") != 0)
+	{
+		l_error("DATA DOESN'T MATCH EXPECTED");
+
+		amqp_bytes_free(res);
+		free(msg);
+
+		return -EINVAL;
+	}
+
+	amqp_bytes_free(res);
+
+	free(msg);
+
 	return 0;
 }
 
 int verify_unregister_device()
 {
 	amqp_bytes_t res;
+	char * msg;
 
 
 	res = consume_mensages(DEVICE_EXCHANGE,EVENT_UNREGISTER);
 
-	// l_info("%s",stringify_bytes(res));
+	msg = stringify_bytes(res);
+
+	if(strcmp(msg,
+	   "{ \"id\": \"udjcnaisjdncoajsmdjancisjancjdisjanr\" }") != 0)
+	{
+		l_error("DATA DOESN'T MATCH EXPECTED");
+
+		amqp_bytes_free(res);
+		free(msg);
+
+		return -EINVAL;
+	}
+
+	amqp_bytes_free(res);
+
+	free(msg);
+
 	return 0;
 }
 
@@ -230,15 +323,38 @@ int verify_mensages_integrity()
 	l_info("VERIFY MENSSAGES INTEGRITY");
 
 	// err = verify_register_device();
+	// if(err<0)
+	// 	l_info("REGISTER DEVICE : ERR");
+	// else
+	// 	l_info("REGISTER DEVICE : OK");
+
 	// err = verify_auth_device();
+	// if(err<0)
+	// 	l_info("AUTH DEVICE : ERR");
+	// else
+	// 	l_info("AUTH DEVICE : OK");
+
 	// err = verify_update_schema();
+	// if(err<0)
+	// 	l_info("UPDATE SCHEMA : ERR");
+	// else
+	// 	l_info("UPDATE SCHEMA : OK");
+
 	err = verify_publish_data();
+	if(err<0)
+		l_info("PUBLISH DATA : ERR");
+	else
+		l_info("PUBLISH DATA : OK");
+
 	err = verify_unregister_device();
+	if(err<0)
+		l_info("UNREGISTER DEVICE : ERR");
+	else
+		l_info("UNREGISTER DEVICE : OK");
 }
 
 int main(int argc, char const *argv[])
 {
-	int rc;
 	int err;
 
 

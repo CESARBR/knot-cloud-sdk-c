@@ -52,7 +52,6 @@ static int test_register_device()
 
 static int test_auth_device()
 {
-
 	char token[KNOT_PROTOCOL_TOKEN_LEN + 1];
 	char id[KNOT_PROTOCOL_UUID_LEN + 1];
 
@@ -66,9 +65,15 @@ static int test_auth_device()
 
 static int test_update_schema()
 {
+	struct l_queue *schema_queue;
+
+	schema_queue = l_queue_new();
+
+	l_queue_push_tail(schema_queue, "SCHEMA DATA");
+
 	l_info("TESTING UPDATE SCHEMA");
 
-	return knot_cloud_update_schema("DEVICE_ID", NULL);
+	return knot_cloud_update_schema("DEVICE_ID", schema_queue);
 }
 
 static int test_publish_data()
