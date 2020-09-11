@@ -1,0 +1,15 @@
+AM_TESTS_ENVIRONMENT = \
+## Some environment initializations are kept in a separate shell
+## file 'tests-env.sh', which can make it easier to also run tests
+## from the command line.
+  . $(srcdir)/tests-env.sh; \
+## On Solaris, prefer more POSIX-compliant versions of the standard
+## tools by default.
+  if test -d /usr/xpg4/bin; then \
+    PATH=/usr/xpg4/bin:$$PATH; export PATH; \
+  fi;
+## With this, the test scripts will be able to print diagnostic
+## messages to the original standard error stream, even if the test
+## driver redirects the stderr of the test scripts to a log file
+## before executing them.
+AM_TESTS_FD_REDIRECT = 9>&2
