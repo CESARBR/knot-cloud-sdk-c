@@ -618,16 +618,21 @@ int knot_cloud_list_devices(void)
  *
  * Returns: 0 if successful and a KNoT error otherwise.
  */
-int knot_cloud_publish_data(const char *id, uint8_t sensor_id,
-			    uint8_t value_type, const knot_value_type *value,
-			    uint8_t kval_len)
+int knot_cloud_publish_data(const char *id, unsigned char sensor_id,
+			    unsigned char value_type, void *value,
+			    unsigned char kval_len)
 {
 	json_object *jobj_data;
 	const char *json_str;
 	int result;
 
-	jobj_data = parser_data_create_object(id, sensor_id, value_type, value,
-					      kval_len);
+	knot_value_type *t_value = (knot_value_type *) value;
+	uint8_t t_sensor_id = (uint8_t) sensor_id;
+	uint8_t t_value_type = (uint8_t) value_type;
+	uint8_t t_kval_len = (uint8_t) kval_len;
+
+	jobj_data = parser_data_create_object(id, t_sensor_id, t_value_type, t_value,
+					      t_kval_len);
 	if (!jobj_data)
 		return KNOT_ERR_CLOUD_FAILURE;
 
