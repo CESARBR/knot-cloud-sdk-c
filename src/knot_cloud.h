@@ -42,7 +42,7 @@ struct knot_cloud_msg {
 		MSG_TYPES_LENGTH
 	} type;
 	union {
-		const char *token; // used when type is REGISTER
+		char *token; // used when type is REGISTER
 		struct l_queue *list; // used when type is UPDATE/REQUEST/LIST
 	};
 };

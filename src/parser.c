@@ -95,6 +95,51 @@ static int knot_value_as_int(const knot_value_type *data)
 	return data->val_i;
 }
 
+static const char *get_str_value_from_json(json_object *jso, const char *key)
+{
+	const char *str_value;
+	json_object *jobjkey;
+
+	if (!json_object_object_get_ex(jso, key, &jobjkey))
+		return NULL;
+
+	if (json_object_get_type(jobjkey) != json_type_string)
+		return NULL;
+
+	str_value = json_object_get_string(jobjkey);
+
+	return str_value;
+}
+
+static void *device_array_item(json_object *array_item,
+		create_device_item_cb cb)
+{
+	json_object *jobjkey;
+	struct l_queue *schema;
+	const char *id, *name;
+
+	/* Getting 'Id': Mandatory field for registered device */
+	id = get_str_value_from_json(array_item, KNOT_JSON_FIELD_DEVICE_ID);
+	if (!id)
+		return NULL;
+
+	if (!json_object_object_get_ex(array_item,
+			KNOT_JSON_FIELD_SCHEMA, &jobjkey))
+		return NULL;
+
+	schema = parser_schema_to_list(json_object_to_json_string(jobjkey));
+	if (!schema)
+		return NULL;
+
+	/* Getting 'Name' */
+	name = get_str_value_from_json(array_item,
+		KNOT_JSON_FIELD_DEVICE_NAME);
+	if (!name)
+		return NULL;
+
+	return cb(id, name, schema);
+}
+
 /*
  * Parsing knot_value_type attribute
  */
@@ -189,9 +234,10 @@ static void schema_item_create_and_append(void *data, void *user_data)
 	json_object_array_add(schema_list, item);
 }
 
-json_object *parser_schema_create_object(const char *device_id,
-					 struct l_queue *schema_list)
+char *parser_schema_create_object(const char *device_id,
+		struct l_queue *schema_list)
 {
+	char *json_str;
 	json_object *json_msg;
 	json_object *json_schema_array;
 
@@ -220,12 +266,15 @@ json_object *parser_schema_create_object(const char *device_id,
 	 *   }]
 	 * }
 	 */
+	json_str = l_strdup(json_object_to_json_string(json_msg));
+	json_object_put(json_msg);
 
-	return json_msg;
+	return json_str;
 }
 
-struct l_queue *parser_update_to_list(json_object *jso)
+struct l_queue *parser_update_to_list(const char *json_str)
 {
+	json_object *json_obj;
 	json_object *json_array;
 	json_object *json_data;
 	json_object *jobjkey;
@@ -235,45 +284,66 @@ struct l_queue *parser_update_to_list(json_object *jso)
 	int jtype;
 	int olen;
 	uint8_t sensor_id;
+	bool has_err;
+
+	json_obj = json_tokener_parse(json_str);
+	if (!json_obj)
+		return NULL;
 
 	list = l_queue_new();
 
-	if (!json_object_object_get_ex(jso, KNOT_JSON_FIELD_DATA, &json_array))
-		goto fail;
+	if (!json_object_object_get_ex(json_obj, KNOT_JSON_FIELD_DATA,
+			&json_array)) {
+		l_queue_destroy(list, l_free);
+		json_object_put(json_obj);
+		return NULL;
+	}
 
+	has_err = false;
 	for (i = 0; i < json_object_array_length(json_array); i++) {
 
 		json_data = json_object_array_get_idx(json_array, i);
-		if (!json_data)
-			goto fail;
+		if (!json_data) {
+			has_err = true;
+			break;
+		}
 
 		/* Getting 'sensorId' */
 		if (!json_object_object_get_ex(json_data,
-				KNOT_JSON_FIELD_SENSOR_ID, &jobjkey))
-			goto fail;
+				KNOT_JSON_FIELD_SENSOR_ID, &jobjkey)) {
+			has_err = true;
+			break;
+		}
 
-		if (json_object_get_type(jobjkey) != json_type_int)
-			goto fail;
+		if (json_object_get_type(jobjkey) != json_type_int) {
+			has_err = true;
+			break;
+		}
 
 		sensor_id = json_object_get_int(jobjkey);
 
 		/* Getting 'value' */
 		if (!json_object_object_get_ex(json_data,
-				KNOT_JSON_FIELD_VALUE, &jobjkey))
-			goto fail;
+				KNOT_JSON_FIELD_VALUE, &jobjkey)) {
+			has_err = true;
+			break;
+		}
 
 		jtype = json_object_get_type(jobjkey);
 		if (jtype != json_type_int &&
 		jtype != json_type_double && jtype != json_type_boolean &&
-			jtype != json_type_string)
-			goto fail;
+			jtype != json_type_string) {
+			has_err = true;
+			break;
+		}
 
 		msg = l_new(knot_msg_data, 1);
 
 		olen = parse_json2data(jobjkey, &msg->payload);
 		if (olen <= 0) {
 			l_free(msg);
-			goto fail;
+			has_err = true;
+			break;
 		}
 
 		msg->sensor_id = sensor_id;
@@ -282,27 +352,31 @@ struct l_queue *parser_update_to_list(json_object *jso)
 
 		if (!l_queue_push_tail(list, msg)) {
 			l_free(msg);
-			goto fail;
+			has_err = true;
+			break;
 		}
+	}
+	json_object_put(json_obj);
+	if (has_err) {
+		l_queue_destroy(list, l_free);
+		return NULL;
 	}
 
 	return list;
-
-fail:
-	l_queue_destroy(list, l_free);
-	return NULL;
 }
 
-json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
+char *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 				       uint8_t value_type,
 				       const knot_value_type *value,
 				       uint8_t kval_len)
 {
+	char *json_str;
 	json_object *json_msg;
 	json_object *data;
 	json_object *json_array;
 	char *encoded;
 	size_t encoded_len;
+	bool has_err;
 
 	json_msg = json_object_new_object();
 	json_array = json_object_new_array();
@@ -313,6 +387,7 @@ json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 	json_object_object_add(data, KNOT_JSON_FIELD_SENSOR_ID,
 			       json_object_new_int(sensor_id));
 
+	has_err = false;
 	switch (value_type) {
 	case KNOT_VALUE_TYPE_INT:
 		json_object_object_add(data, KNOT_JSON_FIELD_VALUE,
@@ -329,9 +404,12 @@ json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 	case KNOT_VALUE_TYPE_RAW:
 		/* Encode as base64 */
 		encoded = knot_value_as_raw(value, kval_len, &encoded_len);
-		if (!encoded)
-			goto fail;
-
+		if (!encoded) {
+			has_err = true;
+			json_object_put(json_array);
+			json_object_put(data);
+			break;
+		}
 		json_object_object_add(data, KNOT_JSON_FIELD_VALUE,
 			json_object_new_string_len(encoded, encoded_len));
 		break;
@@ -348,12 +426,15 @@ json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 			json_object_new_uint64(knot_value_as_uint64(value)));
 		break;
 	default:
-		goto fail;
+		has_err = true;
+		break;
 	}
-
 	json_object_array_add(json_array, data);
 	json_object_object_add(json_msg, KNOT_JSON_FIELD_DATA, json_array);
-
+	if (!has_err) {
+		json_str = l_strdup(json_object_to_json_string(json_msg));
+	}
+	json_object_put(json_msg);
 	/*
 	 * Returned JSON object is in the following format:
 	 *
@@ -365,12 +446,7 @@ json_object *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 	 * }
 	 */
 
-	return json_msg;
-fail:
-	json_object_put(data);
-	json_object_put(json_array);
-	json_object_put(json_msg);
-	return NULL;
+	return (json_str && !has_err) ? json_str : NULL;
 }
 
 struct l_queue *parser_schema_to_list(const char *json_str)
@@ -400,17 +476,16 @@ struct l_queue *parser_schema_to_list(const char *json_str)
 	 */
 
 	for (i = 0; i < json_object_array_length(jobjarray); i++) {
-
 		jobjentry = json_object_array_get_idx(jobjarray, i);
 
 		/* Getting 'sensorId' */
 		if (!json_object_object_get_ex(jobjentry,
 						KNOT_JSON_FIELD_SENSOR_ID,
 						&jobjkey))
-			goto done;
+			break;
 
 		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
+			break;
 
 		sensor_id = json_object_get_int(jobjkey);
 
@@ -418,20 +493,20 @@ struct l_queue *parser_schema_to_list(const char *json_str)
 		if (!json_object_object_get_ex(jobjentry,
 						KNOT_JSON_FIELD_VALUE_TYPE,
 						&jobjkey))
-			goto done;
+			break;
 
 		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
+			break;
 
 		value_type = json_object_get_int(jobjkey);
 
 		/* Getting 'unit' */
 		if (!json_object_object_get_ex(jobjentry, KNOT_JSON_FIELD_UNIT,
 						&jobjkey))
-			goto done;
+			break;
 
 		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
+			break;
 
 		unit = json_object_get_int(jobjkey);
 
@@ -439,10 +514,10 @@ struct l_queue *parser_schema_to_list(const char *json_str)
 		if (!json_object_object_get_ex(jobjentry,
 						KNOT_JSON_FIELD_TYPE_ID,
 						&jobjkey))
-			goto done;
+			break;
 
 		if (json_object_get_type(jobjkey) != json_type_int)
-			goto done;
+			break;
 
 		type_id = json_object_get_int(jobjkey);
 
@@ -450,10 +525,10 @@ struct l_queue *parser_schema_to_list(const char *json_str)
 		if (!json_object_object_get_ex(jobjentry,
 						KNOT_JSON_FIELD_DEVICE_NAME,
 						&jobjkey))
-			goto done;
+			break;
 
 		if (json_object_get_type(jobjkey) != json_type_string)
-			goto done;
+			break;
 
 		name = json_object_get_string(jobjkey);
 		/*
@@ -470,8 +545,6 @@ struct l_queue *parser_schema_to_list(const char *json_str)
 
 		l_queue_push_tail(list, entry);
 	}
-
-done:
 	json_object_put(jobjarray);
 
 	if (l_queue_isempty(list)) {
@@ -482,14 +555,18 @@ done:
 	return list;
 }
 
-struct l_queue *parser_queue_from_json_array(json_object *jobj,
-					parser_json_array_item_cb foreach_cb)
+struct l_queue *parser_queue_from_json_array(const char *json_str,
+					     create_device_item_cb item_cb)
 {
-	json_object *jobjentry, *jarray;
+	json_object *jobj, *jobjentry, *jarray;
 	struct l_queue *list;
 	void *item;
 	int len;
 	int i;
+
+	jobj = json_tokener_parse(json_str);
+	if (!jobj)
+		return NULL;
 
 	jarray = json_object_object_get(jobj, KNOT_JSON_FIELD_DEVICES);
 	if (!jarray)
@@ -503,54 +580,70 @@ struct l_queue *parser_queue_from_json_array(json_object *jobj,
 
 	for (i = 0; i < len; i++) {
 		jobjentry = json_object_array_get_idx(jarray, i);
-
-		item = foreach_cb(jobjentry);
+		item = device_array_item(jobjentry, item_cb);
 		if (item)
 			l_queue_push_tail(list, item);
 	}
+	json_object_put(jobj);
 
 	return list;
 }
 
-struct l_queue *parser_request_to_list(json_object *jso)
+struct l_queue *parser_request_to_list(const char *json_str)
 {
+	json_object *jso;
 	struct l_queue *list;
 	json_object *json_array;
 	json_object *jobjentry;
 	int sensor_id;
 	uint64_t i;
+	bool has_err;
 
+	jso = json_tokener_parse(json_str);
+	if (!jso)
+		return NULL;
 	list = l_queue_new();
 
 	if (!json_object_object_get_ex(jso, KNOT_JSON_FIELD_SENSOR_IDS,
-			&json_array))
-		goto fail;
+			&json_array)) {
+		l_queue_destroy(list, l_free);
+		return NULL;
+	}
 
+	has_err = false;
 	for (i = 0; i < json_object_array_length(json_array); i++) {
 
 		jobjentry = json_object_array_get_idx(json_array, i);
-		if (!jobjentry)
-			goto fail;
+		if (!jobjentry) {
+			has_err = true;
+			break;
+		}
 
-		if (json_object_get_type(jobjentry) != json_type_int)
-			goto fail;
+		if (json_object_get_type(jobjentry) != json_type_int) {
+			has_err = true;
+			break;
+		}
 
 		sensor_id = json_object_get_int(jobjentry);
 
 		if (!l_queue_push_tail(list,
-				l_memdup(&sensor_id, sizeof(sensor_id))))
-			goto fail;
+				l_memdup(&sensor_id, sizeof(sensor_id)))) {
+			has_err = true;
+			break;
+		}
+	}
+
+	if (has_err) {
+		l_queue_destroy(list, l_free);
+		return NULL;
 	}
 
 	return list;
-
-fail:
-	l_queue_destroy(list, l_free);
-	return NULL;
 }
 
-json_object *parser_sensorid_to_json(const char *key, struct l_queue *list)
+char *parser_sensorid_to_json(const char *key, struct l_queue *list)
 {
+	char *json_str;
 	int *id;
 	json_object *ajobj;
 	json_object *entry;
@@ -567,13 +660,16 @@ json_object *parser_sensorid_to_json(const char *key, struct l_queue *list)
 
 	setdatajobj = json_object_new_object();
 	json_object_object_add(setdatajobj, key, ajobj);
+	json_str = l_strdup(json_object_to_json_string(setdatajobj));
+	json_object_put(setdatajobj);
 
-	return setdatajobj;
+	return json_str;
 }
 
-json_object *parser_device_json_create(const char *device_id,
-				       const char *device_name)
+char *parser_device_json_create(const char *device_id,
+			const char *device_name)
 {
+	char *json_str;
 	json_object *device;
 
 	device = json_object_new_object();
@@ -581,9 +677,9 @@ json_object *parser_device_json_create(const char *device_id,
 		return NULL;
 
 	json_object_object_add(device, KNOT_JSON_FIELD_DEVICE_NAME,
-			       json_object_new_string(device_name));
+			json_object_new_string(device_name));
 	json_object_object_add(device, KNOT_JSON_FIELD_DEVICE_ID,
-			       json_object_new_string(device_id));
+			json_object_new_string(device_id));
 
 	/*
 	 * Returned JSON object is in the following format:
@@ -592,12 +688,16 @@ json_object *parser_device_json_create(const char *device_id,
 	 *   "name": "KNoT Thing"
 	 * }
 	 */
-	return device;
+	json_str = l_strdup(json_object_to_json_string(device));
+	json_object_put(device);
+
+	return json_str;
 }
 
-json_object *parser_auth_json_create(const char *device_id,
-				     const char *device_token)
+char *parser_auth_json_create(const char *device_id,
+			const char *device_token)
 {
+	char *json_str;
 	json_object *auth;
 
 	auth = json_object_new_object();
@@ -609,6 +709,7 @@ json_object *parser_auth_json_create(const char *device_id,
 	json_object_object_add(auth, KNOT_JSON_FIELD_DEVICE_TOKEN,
 			       json_object_new_string(device_token));
 
+
 	/*
 	 * Returned JSON object is in the following format:
 	 *
@@ -616,11 +717,15 @@ json_object *parser_auth_json_create(const char *device_id,
 	 *   "token": "0c20c12e2ac058d0513d81dc58e33b2f9ff8c83d"
 	 * }
 	 */
-	return auth;
+	json_str = l_strdup(json_object_to_json_string(auth));
+	json_object_put(auth);
+
+	return json_str;
 }
 
-json_object *parser_unregister_json_create(const char *device_id)
+char *parser_unregister_json_create(const char *device_id)
 {
+	char *json_str;
 	json_object *unreg;
 
 	unreg = json_object_new_object();
@@ -635,12 +740,22 @@ json_object *parser_unregister_json_create(const char *device_id)
 	 *
 	 * { "id": "fbe64efa6c7f717e" }
 	 */
-	return unreg;
+	json_str = l_strdup(json_object_to_json_string(unreg));
+	json_object_put(unreg);
+
+	return json_str;
 }
 
-const char *parser_get_key_str_from_json_obj(json_object *jso, const char *key)
+char *parser_get_key_str_from_json_str(const char *json_str,
+				       const char *key)
 {
+	char *str_key;
+	json_object *jso;
 	json_object *jobjkey;
+
+	jso = json_tokener_parse(json_str);
+	if (!jso)
+		return NULL;
 
 	if (!json_object_object_get_ex(jso, key, &jobjkey))
 		return NULL;
@@ -648,18 +763,27 @@ const char *parser_get_key_str_from_json_obj(json_object *jso, const char *key)
 	if (json_object_get_type(jobjkey) != json_type_string)
 		return NULL;
 
-	return json_object_get_string(jobjkey);
+	str_key = l_strdup(json_object_get_string(jobjkey));
+	json_object_put(jso);
+
+	return str_key;
 }
 
-bool parser_is_key_str_or_null(const json_object *jso, const char *key)
+bool parser_is_key_str_or_null(const char *json_str, const char *key)
 {
+	json_object *jso;
 	json_object *jobjkey;
 	enum json_type type;
+
+	jso = json_tokener_parse(json_str);
+	if (!jso)
+		return false;
 
 	if (!json_object_object_get_ex(jso, key, &jobjkey))
 		return false;
 
 	type = json_object_get_type(jobjkey);
+	json_object_put(jso);
 
 	return type == json_type_string || type == json_type_null;
 }
