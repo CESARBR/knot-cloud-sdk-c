@@ -36,7 +36,7 @@
 #define KNOT_JSON_FIELD_UPPER_THRESHOLD	"upperThreshold"
 
 typedef void *(create_device_item_cb) (const char *id, const char *name,
-				       struct l_queue *schema);
+				       struct l_queue *config);
 
 char *parser_config_create_object(const char *device_id,
 					 struct l_queue *config_list);

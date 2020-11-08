@@ -2,6 +2,8 @@
 *.lo
 *.la
 *.pc
+*.log
+*.trs
 .libs
 .deps
 INSTALL
@@ -27,3 +29,6 @@ src/Makefile
 src/Makefile.in
 libs/
 stamp-h1
+test-driver
+integration_test
+out.txt
