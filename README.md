@@ -78,6 +78,11 @@ To install KNoT Protocol, you have to follow the instructions below:
 
 ## Test
 
+1. `$ autoreconf -i`
+2. `$ make check`
+
+## Mock-Cloud
+
 In case you want to create a test enviroment for your thingd, we provide a
 emulation of the cloud enviroment.
 To run this emulation you must:
