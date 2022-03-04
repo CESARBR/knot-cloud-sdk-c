@@ -34,6 +34,7 @@
 #define KNOT_JSON_FIELD_TIME_SEC	"timeSec"
 #define KNOT_JSON_FIELD_LOWER_THRESHOLD	"lowerThreshold"
 #define KNOT_JSON_FIELD_UPPER_THRESHOLD	"upperThreshold"
+#define KNOT_JSON_FIELD_TIMESTAMP	"timestamp"
 
 typedef void *(create_device_item_cb) (const char *id, const char *name,
 				       struct l_queue *schema);
@@ -44,7 +45,8 @@ struct l_queue *parser_update_to_list(const char *json_str);
 char *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 				uint8_t value_type,
 				const knot_value_type *value,
-				uint8_t kval_len);
+				uint8_t kval_len,
+				struct tm *ptm);
 struct l_queue *parser_config_to_list(const char *json_str);
 struct l_queue *parser_queue_from_json_array(const char *json_str,
 					     create_device_item_cb item_cb);

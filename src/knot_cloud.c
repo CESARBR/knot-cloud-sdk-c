@@ -547,13 +547,13 @@ int knot_cloud_list_devices(void)
  */
 int knot_cloud_publish_data(const char *id, uint8_t sensor_id,
 			    uint8_t value_type, const knot_value_type *value,
-			    uint8_t kval_len)
+			    uint8_t kval_len, struct tm *ptm)
 {
 	char *json_str;
 	int result;
 
 	json_str = parser_data_create_object(id, sensor_id, value_type, value,
-					      kval_len);
+					      kval_len, ptm);
 	if (!json_str)
 		return KNOT_ERR_CLOUD_FAILURE;
 

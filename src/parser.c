@@ -20,6 +20,8 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <time.h>
+#include <string.h>
 
 #include <ell/ell.h>
 
@@ -592,7 +594,8 @@ struct l_queue *parser_update_to_list(const char *json_str)
 char *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 				       uint8_t value_type,
 				       const knot_value_type *value,
-				       uint8_t kval_len)
+				       uint8_t kval_len,
+				       struct tm *ptm)
 {
 	char *json_str;
 	json_object *json_msg;
@@ -601,6 +604,8 @@ char *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 	char *encoded;
 	size_t encoded_len;
 	bool has_err;
+	time_t rawtime = time(NULL);
+	char buf[32] = {0};
 
 	json_msg = json_object_new_object();
 	json_array = json_object_new_array();
@@ -653,6 +658,15 @@ char *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 		has_err = true;
 		break;
 	}
+
+	if (ptm == NULL) {
+		puts("The localtime() function failed");
+		has_err = true;
+	}
+	strftime(buf, 32, "%Y-%m-%dT%X.0%z", ptm);
+
+	json_object_object_add(data, KNOT_JSON_FIELD_TIMESTAMP,
+			       json_object_new_string_len(buf, strlen(buf)));
 	json_object_array_add(json_array, data);
 	json_object_object_add(json_msg, KNOT_JSON_FIELD_DATA, json_array);
 	if (!has_err) {
@@ -666,6 +680,7 @@ char *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 	 *   "data": [{
 	 *     "sensorId": 1,
 	 *     "value": false,
+	 *     "timestamp": "2022-03-04T09:22:15.0Z"
 	 *   }]
 	 * }
 	 */

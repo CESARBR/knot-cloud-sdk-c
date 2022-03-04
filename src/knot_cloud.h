@@ -65,7 +65,7 @@ int knot_cloud_update_config(const char *id, struct l_queue *config_list);
 int knot_cloud_list_devices(void);
 int knot_cloud_publish_data(const char *id, uint8_t sensor_id,
 			    uint8_t value_type, const knot_value_type *value,
-			    uint8_t kval_len);
+			    uint8_t kval_len, struct tm *ptm);
 int knot_cloud_read_start(const char *id, knot_cloud_cb_t read_handler_cb,
 			  void *user_data);
 int knot_cloud_start(char *url, char *user_token,
