@@ -145,6 +145,10 @@ static struct knot_cloud_msg *create_msg(const char *routing_key,
 		has_err = msg->token ? false : true;
 		break;
 	case UNREGISTER_MSG:
+		msg->id = parser_get_key_str_from_json_str(json_str,
+			KNOT_JSON_FIELD_DEVICE_ID);
+		has_err = msg->id ? false : true;
+		break;
 	case AUTH_MSG:
 		break;
 	case CONFIG_MSG:

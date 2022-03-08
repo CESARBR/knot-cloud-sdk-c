@@ -48,6 +48,7 @@ struct knot_cloud_msg {
 	} type;
 	union {
 		char *token; // used when type is REGISTER
+		char *id; // used when type is UNREGISTER
 		struct l_queue *list; // used when type is UPDATE/REQUEST/LIST
 	};
 };
