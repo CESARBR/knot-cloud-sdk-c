@@ -662,8 +662,9 @@ char *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 	if (ptm == NULL) {
 		puts("The localtime() function failed");
 		has_err = true;
+	} else {
+		strftime(buf, 32, "%Y-%m-%dT%X.0%z", ptm);
 	}
-	strftime(buf, 32, "%Y-%m-%dT%X.0%z", ptm);
 
 	json_object_object_add(data, KNOT_JSON_FIELD_TIMESTAMP,
 			       json_object_new_string_len(buf, strlen(buf)));
