@@ -31,7 +31,6 @@
 #define KNOT_JSON_FIELD_TYPE_ID		"typeId"
 #define KNOT_JSON_FIELD_ERROR		"error"
 #define KNOT_JSON_FIELD_CHANGE		"change"
-#define KNOT_JSON_FIELD_TIME_SEC	"timeSec"
 #define KNOT_JSON_FIELD_LOWER_THRESHOLD	"lowerThreshold"
 #define KNOT_JSON_FIELD_UPPER_THRESHOLD	"upperThreshold"
 #define KNOT_JSON_FIELD_TIMESTAMP	"timestamp"

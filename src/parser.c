@@ -228,9 +228,6 @@ static json_object *event_item_create_obj(knot_msg_config *config)
 		json_object_object_add(json_event, KNOT_JSON_FIELD_CHANGE,
 				       json_object_new_boolean(true));
 
-	json_object_object_add(json_event, KNOT_JSON_FIELD_TIME_SEC,
-			       json_object_new_int(config->event.time_sec));
-
 	if (config->event.event_flags & KNOT_EVT_FLAG_LOWER_THRESHOLD)
 		json_object_object_add(json_event,
 				KNOT_JSON_FIELD_LOWER_THRESHOLD,
@@ -315,7 +312,7 @@ static int get_event(knot_event *event, json_object *data)
 {
 	json_object *jobjkey, *jobj_event;
 	knot_value_type lower_threshold, upper_threshold;
-	int sensor_id, time_sec;
+	int sensor_id;
 	uint8_t evt_flag;
 	bool change;
 
@@ -338,18 +335,6 @@ static int get_event(knot_event *event, json_object *data)
 	if (change)
 		evt_flag |= KNOT_EVT_FLAG_CHANGE;
 
-	/* Getting 'timeSec' */
-	if (json_object_object_get_ex(jobj_event, KNOT_JSON_FIELD_TIME_SEC,
-				      &jobjkey)) {
-
-		if (json_object_get_type(jobjkey) != json_type_int)
-			return -1;
-
-		time_sec = json_object_get_int(jobjkey);
-
-		evt_flag |= KNOT_EVT_FLAG_TIME;
-	}
-
 	/* Getting 'lowerThreshold' */
 	if (json_object_object_get_ex(jobj_event,
 				      KNOT_JSON_FIELD_LOWER_THRESHOLD,
@@ -370,7 +355,6 @@ static int get_event(knot_event *event, json_object *data)
 		evt_flag |= KNOT_EVT_FLAG_UPPER_THRESHOLD;
 	}
 
-	event->time_sec = time_sec;
 	event->lower_limit = lower_threshold;
 	event->upper_limit = upper_threshold;
 	event->event_flags = evt_flag;
@@ -722,18 +706,20 @@ struct l_queue *parser_config_to_list(const char *json_str)
 			break;
 		}
 
-		if (get_sensor_id(&sensor_id_aux, jobjentry) < 0) {
+		if (get_sensor_id(&sensor_id_aux, jobjentry) <
+				KNOT_STATUS_OK) {
 			err = true;
 			break;
 		}
 		config->sensor_id = sensor_id_aux;
 
-		if (get_schema(&config->schema, jobjentry) < 0) {
+		if (get_schema(&config->schema, jobjentry) <
+			KNOT_STATUS_OK) {
 			err = true;
 			break;
 		}
 
-		if (get_event(&config->event, jobjentry) < 0) {
+		if (get_event(&config->event, jobjentry) < KNOT_STATUS_OK) {
 			config->event.event_flags &= KNOT_EVT_FLAG_NONE;
 			config->event.event_flags |= KNOT_EVT_FLAG_UNREGISTERED;
 		}
