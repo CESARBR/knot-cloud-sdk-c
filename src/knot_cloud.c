@@ -549,7 +549,7 @@ int knot_cloud_list_devices(void)
  *
  * Returns: 0 if successful and a KNoT error otherwise.
  */
-int knot_cloud_publish_data(const char *id, uint8_t sensor_id,
+int knot_cloud_publish_data(const char *id, int sensor_id,
 			    uint8_t value_type, const knot_value_type *value,
 			    uint8_t kval_len, struct tm *ptm)
 {
