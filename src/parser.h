@@ -42,7 +42,7 @@ typedef void *(create_device_item_cb) (const char *id, const char *name,
 char *parser_config_create_object(const char *device_id,
 					 struct l_queue *config_list);
 struct l_queue *parser_update_to_list(const char *json_str);
-char *parser_data_create_object(const char *device_id, uint8_t sensor_id,
+char *parser_data_create_object(const char *device_id, int sensor_id,
 				uint8_t value_type,
 				const knot_value_type *value,
 				uint8_t kval_len,

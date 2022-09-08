@@ -34,6 +34,8 @@
 
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 
+#define TIMESTAMP_STRING_SIZE			32
+
 /*
  * TODO: consider moving this to knot-protocol
  */
@@ -297,7 +299,6 @@ static void config_item_create_and_append(void *data, void *user_data)
 	json_object *schema, *event, *config_obj;
 
 	config_obj = json_object_new_object();
-
 	json_object_object_add(config_obj, KNOT_JSON_FIELD_SENSOR_ID,
 			       json_object_new_int(config->sensor_id));
 
@@ -435,7 +436,7 @@ static int get_schema(knot_schema *schema, json_object *data)
 	return 0;
 }
 
-static int get_sensor_id(uint8_t *sensor_id, json_object *data)
+static int get_sensor_id(int *sensor_id, json_object *data)
 {
 	json_object *jobjkey;
 
@@ -509,7 +510,7 @@ struct l_queue *parser_update_to_list(const char *json_str)
 	uint64_t i;
 	int jtype;
 	int olen;
-	uint8_t sensor_id;
+	int sensor_id;
 	bool has_err;
 
 	json_obj = json_tokener_parse(json_str);
@@ -591,7 +592,7 @@ struct l_queue *parser_update_to_list(const char *json_str)
 	return list;
 }
 
-char *parser_data_create_object(const char *device_id, uint8_t sensor_id,
+char *parser_data_create_object(const char *device_id, int sensor_id,
 				       uint8_t value_type,
 				       const knot_value_type *value,
 				       uint8_t kval_len,
@@ -663,7 +664,7 @@ char *parser_data_create_object(const char *device_id, uint8_t sensor_id,
 		puts("The localtime() function failed");
 		has_err = true;
 	} else {
-		strftime(buf, 32, "%Y-%m-%dT%X.0%z", ptm);
+		strftime(buf, TIMESTAMP_STRING_SIZE, "%Y-%m-%dT%X.0%z", ptm);
 	}
 
 	json_object_object_add(data, KNOT_JSON_FIELD_TIMESTAMP,
@@ -697,6 +698,7 @@ struct l_queue *parser_config_to_list(const char *json_str)
 	uint64_t i;
 	const char *name;
 	bool err;
+	int sensor_id_aux;
 
 	jobjconfig = json_tokener_parse(json_str);
 	if (!jobjconfig)
@@ -720,10 +722,11 @@ struct l_queue *parser_config_to_list(const char *json_str)
 			break;
 		}
 
-		if (get_sensor_id(&config->sensor_id, jobjentry) < 0) {
+		if (get_sensor_id(&sensor_id_aux, jobjentry) < 0) {
 			err = true;
 			break;
 		}
+		config->sensor_id = sensor_id_aux;
 
 		if (get_schema(&config->schema, jobjentry) < 0) {
 			err = true;
