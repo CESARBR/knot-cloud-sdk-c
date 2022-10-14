@@ -88,7 +88,15 @@ static bool knot_value_as_boolean(const knot_value_type *data)
  */
 static double knot_value_as_double(const knot_value_type *data)
 {
-	return (double) data->val_f;
+	return data->val_d;
+}
+
+/*
+ * TODO: consider moving this to knot-protocol
+ */
+static float knot_value_as_float(const knot_value_type *data)
+{
+	return data->val_f;
 }
 
 /*
@@ -163,8 +171,8 @@ static int parse_json2data(json_object *jobj, knot_value_type *kvalue)
 		break;
 	case json_type_double:
 		/* FIXME: how to handle overflow? */
-		kvalue->val_f = (float) json_object_get_double(jobjkey);
-		olen = sizeof(kvalue->val_f);
+		kvalue->val_d = json_object_get_double(jobjkey);
+		olen = sizeof(kvalue->val_d);
 		break;
 	case json_type_int:
 		kvalue->val_i = json_object_get_int(jobjkey);
@@ -205,6 +213,8 @@ static json_object *parse_value_to_json(uint8_t value_type,
 		return json_object_new_uint64(value->val_u64);
 	case KNOT_VALUE_TYPE_UINT64:
 		return json_object_new_uint64(value->val_u64);
+	case KNOT_VALUE_TYPE_DOUBLE:
+		return json_object_new_double(value->val_d);
 	default:
 		break;
 	}
@@ -601,7 +611,7 @@ char *parser_data_create_object(const char *device_id, int sensor_id,
 		break;
 	case KNOT_VALUE_TYPE_FLOAT:
 		json_object_object_add(data, KNOT_JSON_FIELD_VALUE,
-			json_object_new_double(knot_value_as_double(value)));
+			json_object_new_double((double) knot_value_as_float(value)));
 		break;
 	case KNOT_VALUE_TYPE_BOOL:
 		json_object_object_add(data, KNOT_JSON_FIELD_VALUE,
@@ -622,6 +632,10 @@ char *parser_data_create_object(const char *device_id, int sensor_id,
 	case KNOT_VALUE_TYPE_UINT64:
 		json_object_object_add(data, KNOT_JSON_FIELD_VALUE,
 			json_object_new_uint64(knot_value_as_uint64(value)));
+		break;
+	case KNOT_VALUE_TYPE_DOUBLE:
+		json_object_object_add(data, KNOT_JSON_FIELD_VALUE,
+			json_object_new_double(knot_value_as_double(value)));
 		break;
 	default:
 		has_err = true;
