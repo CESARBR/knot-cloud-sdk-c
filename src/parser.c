@@ -153,7 +153,6 @@ static int parse_json2data(json_object *jobj, knot_value_type *kvalue)
 {
 	json_object *jobjkey;
 	const char *str;
-	uint8_t *u8val;
 	size_t olen = 0;
 
 	jobjkey = jobj;
@@ -173,15 +172,8 @@ static int parse_json2data(json_object *jobj, knot_value_type *kvalue)
 		break;
 	case json_type_string:
 		str = json_object_get_string(jobjkey);
-		u8val = l_base64_decode(str, strlen(str), &olen);
-		if (!u8val)
-			break;
-
-		if (olen > KNOT_DATA_RAW_SIZE)
-			olen = KNOT_DATA_RAW_SIZE; /* truncate */
-
-		memcpy(kvalue->raw, u8val, olen);
-		l_free(u8val);
+		olen = strlen(str);
+		memcpy(kvalue->raw, str, olen);
 		break;
 	/* FIXME: not implemented */
 	case json_type_null:
@@ -616,16 +608,8 @@ char *parser_data_create_object(const char *device_id, int sensor_id,
 			json_object_new_boolean(knot_value_as_boolean(value)));
 		break;
 	case KNOT_VALUE_TYPE_RAW:
-		/* Encode as base64 */
-		encoded = knot_value_as_raw(value, kval_len, &encoded_len);
-		if (!encoded) {
-			has_err = true;
-			json_object_put(json_array);
-			json_object_put(data);
-			break;
-		}
 		json_object_object_add(data, KNOT_JSON_FIELD_VALUE,
-			json_object_new_string_len(encoded, encoded_len));
+			json_object_new_string_len(value->raw, strlen(value->raw)));
 		break;
 	case KNOT_VALUE_TYPE_INT64:
 		json_object_object_add(data, KNOT_JSON_FIELD_VALUE,
