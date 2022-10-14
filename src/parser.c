@@ -616,16 +616,8 @@ char *parser_data_create_object(const char *device_id, int sensor_id,
 			json_object_new_boolean(knot_value_as_boolean(value)));
 		break;
 	case KNOT_VALUE_TYPE_RAW:
-		/* Encode as base64 */
-		encoded = knot_value_as_raw(value, kval_len, &encoded_len);
-		if (!encoded) {
-			has_err = true;
-			json_object_put(json_array);
-			json_object_put(data);
-			break;
-		}
 		json_object_object_add(data, KNOT_JSON_FIELD_VALUE,
-			json_object_new_string_len(encoded, encoded_len));
+			json_object_new_string_len(value->raw, strlen(value->raw)));
 		break;
 	case KNOT_VALUE_TYPE_INT64:
 		json_object_object_add(data, KNOT_JSON_FIELD_VALUE,
